@@ -26,7 +26,10 @@ pub trait App: Send + 'static {
     /// its own layout from this data.
     type View: Send + Sync + 'static;
 
-    /// Commands to run once the actor starts.
+    /// Initialize state and return commands to run once the actor starts.
+    ///
+    /// Called synchronously by [`crate::spawn`] before the first snapshot, so
+    /// the frontend never observes a pre-initialization view.
     fn init(&mut self) -> Command<Self::Message> {
         Command::none()
     }

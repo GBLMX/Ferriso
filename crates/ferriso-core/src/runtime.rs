@@ -136,6 +136,9 @@ impl CoreTask {
 /// to mutate the application; the snapshots are the only way to observe it.
 pub fn spawn<A: App>(app: A) -> (CoreHandle<A::Message>, Snapshots<A::View>, CoreTask) {
     let mut app = app;
+    // `init` mutates state before anyone can observe it, so the very first
+    // snapshot already includes initialization. Its commands run on the actor.
+    let init = app.init();
     let (views_tx, views_rx) = watch::channel(Arc::new(app.view()));
     let (control_tx, mut control_rx) = mpsc::unbounded_channel();
     let (command_tx, mut command_rx) = mpsc::unbounded_channel::<A::Message>();
@@ -150,8 +153,7 @@ pub fn spawn<A: App>(app: A) -> (CoreHandle<A::Message>, Snapshots<A::View>, Cor
             )
         });
 
-        dispatch(app.init(), &command_tx);
-        views_tx.send_replace(Arc::new(app.view()));
+        dispatch(init, &command_tx);
         if app.should_quit() {
             app.shutdown();
             return;
@@ -287,6 +289,38 @@ mod tests {
         fn should_quit(&self) -> bool {
             self.quit
         }
+    }
+
+    #[tokio::test]
+    async fn first_snapshot_includes_init_state() {
+        struct Initialized {
+            ready: bool,
+        }
+
+        impl App for Initialized {
+            type Message = ();
+            type View = bool;
+
+            fn init(&mut self) -> Command<()> {
+                self.ready = true;
+                Command::none()
+            }
+
+            fn update(&mut self, (): ()) -> Command<()> {
+                Command::none()
+            }
+
+            fn view(&self) -> bool {
+                self.ready
+            }
+        }
+
+        let (handle, snapshots, task) = spawn(Initialized { ready: false });
+        assert!(*snapshots.current());
+        drop(handle);
+        timeout(Duration::from_secs(1), task.join())
+            .await
+            .expect("actor exits");
     }
 
     #[tokio::test]
