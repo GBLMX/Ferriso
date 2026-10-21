@@ -64,12 +64,26 @@ where
     A: App,
     R: Renderer<A::View, A::Message>,
 {
+    run_with_app(move || app, renderer, options)
+}
+
+/// Spawn an application built inside the adapter's Tokio runtime.
+///
+/// Use this when construction itself needs a reactor (HTTP clients, audio
+/// devices, `tokio::spawn`). [`run`] cannot help there: its runtime is created
+/// after the caller has already built the app.
+pub fn run_with_app<A, R, F>(build: F, renderer: R, options: Options) -> io::Result<()>
+where
+    A: App,
+    R: Renderer<A::View, A::Message>,
+    F: FnOnce() -> A,
+{
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
     let (handle, snapshots, task) = {
         let _enter = runtime.enter();
-        ferriso_core::spawn(app)
+        ferriso_core::spawn(build())
     };
 
     let result = run_with::<A, R>(handle.clone(), snapshots, renderer, options);

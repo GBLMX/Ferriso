@@ -41,7 +41,7 @@ impl Default for PlayerGui {
 }
 
 impl Renderer<ViewModel, Message> for PlayerGui {
-    fn view<'a>(&self, view: &'a ViewModel) -> Element<'a, Msg> {
+    fn view<'a>(&'a self, view: &'a ViewModel) -> Element<'a, Msg> {
         let sidebar = sidebar(view);
         let main = column![top_bar(view), content(view), player_bar(view)]
             .spacing(10)
