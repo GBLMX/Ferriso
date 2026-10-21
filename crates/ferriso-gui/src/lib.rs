@@ -97,6 +97,9 @@ struct Frontend<V, M, L, R> {
 
 /// Spawn `app` on a private Tokio runtime and open an iced window.
 ///
+/// Applications whose constructor needs a Tokio reactor should use
+/// [`run_with_app`].
+///
 /// Use [`run_with`] to attach a window to a core actor created elsewhere.
 pub fn run<A, L, R>(app: A, renderer: R, settings: Settings) -> iced::Result
 where

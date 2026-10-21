@@ -75,6 +75,14 @@ Rules that keep the boundary real:
 // Convenience: the adapter owns a private runtime, actor, and terminal/window.
 ferriso_tui::run(Player::new(), PlayerTui::new(), Options::default())?;
 ferriso_gui::run(Player::new(), PlayerGui::new(), Settings::default())?;
+
+// When construction needs a reactor (HTTP clients, audio devices, tokio::spawn),
+// build the app inside the adapter's runtime instead.
+ferriso_gui::run_with_app(
+    || Player::new(),
+    PlayerGui::new(),
+    Settings::default(),
+)?;
 ```
 
 One actor can serve several frontends:
@@ -100,7 +108,10 @@ ownership with the caller.
 
 Iced owns its window, renderer, widget tree, focus, text cursor, scrolling, and
 redraw scheduling. Those are frontend-local state and are not part of the
-application model.
+application model. Renderer-local messages (a seek preview, a key chord that
+needs local state) travel through `Message::Local` and never wake the actor;
+`on_snapshot` and `on_message` are the hooks for cover caches, QR codes, and
+notifications, and `theme` lets each snapshot choose the window palette.
 
 Iced **does not** own the application:
 
@@ -118,7 +129,8 @@ watch receiver into a stream, so iced receives changes without polling.
 
 The same inversion holds for ratatui: the adapter owns the blocking loop, reads
 the latest snapshot before drawing, and translates terminal events into
-messages. `Renderer::draw` receives `&View`; there is no mutable access to the
+messages. It redraws only after an input event or a snapshot change, so an idle
+terminal is not repainted twenty times a second. `Renderer::draw` receives `&View`; there is no mutable access to the
 application.
 
 ## Why there is no shared layout IR in v1
