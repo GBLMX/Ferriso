@@ -13,7 +13,7 @@ use std::{
 
 use ferriso_core::{App, CoreHandle, Snapshots};
 use futures::{Stream, stream};
-use iced::{Element, Subscription, Task};
+use iced::{Element, Subscription, Task, Theme};
 
 pub use iced;
 
@@ -47,6 +47,19 @@ pub trait Renderer<V, M> {
     /// events, animations). Snapshot deliveries are added by the adapter.
     fn subscription(&self, _view: &V) -> Subscription<Message<V, M>> {
         Subscription::none()
+    }
+
+    /// Observe a semantic message before it is sent to the core. Use this for
+    /// renderer-local state that mirrors a message, such as a seek preview.
+    fn on_message(&mut self, _message: &M) {}
+
+    /// Observe a new snapshot before it replaces the previous one. Cover and
+    /// QR caches, notifications, and other view-local bookkeeping belong here.
+    fn on_snapshot(&mut self, _view: &V) {}
+
+    /// The window theme for this snapshot. The default follows the system.
+    fn theme(&self, _view: &V) -> Theme {
+        Theme::Dark
     }
 }
 
@@ -141,6 +154,7 @@ where
             frontend.renderer.subscription(&frontend.view),
         ])
     })
+    .theme(|frontend: &Frontend<A::View, A::Message, R>| frontend.renderer.theme(&frontend.view))
     .window_size(size)
     .run()
 }
@@ -155,6 +169,7 @@ where
 {
     match message {
         Message::User(message) => {
+            frontend.renderer.on_message(&message);
             if frontend.handle.send(message) {
                 Task::none()
             } else {
@@ -162,6 +177,7 @@ where
             }
         }
         Message::Snapshot(view) => {
+            frontend.renderer.on_snapshot(&view);
             frontend.view = view;
             Task::none()
         }

@@ -120,19 +120,22 @@ where
     A: App,
     R: Renderer<A::View, A::Message>,
 {
-    loop {
-        let view = snapshots.current();
-        terminal.draw(|frame| renderer.draw(&view, frame))?;
+    let mut view = snapshots.current();
+    terminal.draw(|frame| renderer.draw(&view, frame))?;
 
+    loop {
         if snapshots.closed() {
             break;
         }
+
+        let mut dirty = !std::sync::Arc::ptr_eq(&view, &snapshots.current());
 
         if event::poll(options.poll_interval)? {
             let terminal_event = event::read()?;
             if quit_shortcut(&terminal_event) {
                 break;
             }
+            dirty = true;
             match renderer.handle(&view, terminal_event) {
                 Outcome::Ignored => {}
                 Outcome::Message(message) => {
@@ -142,6 +145,11 @@ where
                 }
                 Outcome::Quit => break,
             }
+        }
+
+        if dirty {
+            view = snapshots.current();
+            terminal.draw(|frame| renderer.draw(&view, frame))?;
         }
     }
     Ok(())
