@@ -1,0 +1,16 @@
+[package]
+name = "ferriso-ratatui"
+description = "Ratatui renderer and terminal event loop for Ferriso applications."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ferriso = { workspace = true }
+crossterm = "0.29"
+qrcode = "0.14"
+ratatui = { version = "0.30", default-features = false, features = ["crossterm_0_29"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+unicode-width = "0.2"

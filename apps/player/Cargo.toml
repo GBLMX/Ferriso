@@ -1,0 +1,22 @@
+[package]
+name = "ferriso-player"
+description = "The Ferriso practice app: one music-player model, two renderers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ferriso = { workspace = true }
+ferriso-iced = { workspace = true }
+ferriso-ratatui = { workspace = true }
+tokio = { version = "1", features = ["time"] }
+
+[[bin]]
+name = "ferriso-player-tui"
+path = "src/main_tui.rs"
+
+[[bin]]
+name = "ferriso-player-gui"
+path = "src/main_gui.rs"
