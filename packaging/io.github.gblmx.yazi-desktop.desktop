@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=yazi-desktop
+GenericName=File Manager
+Comment=Keyboard-driven file manager built on Ferriso
+Exec=yazi-desktop
+Icon=io.github.gblmx.yazi-desktop
+Terminal=false
+Categories=System;FileTools;FileManager;
+Keywords=files;manager;ferriso;yazi;
+StartupWMClass=io.github.gblmx.yazi-desktop

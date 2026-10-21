@@ -1,14 +1,19 @@
-use ferriso_gui::Settings;
 use ferriso_player::app::Player;
+use ferriso_player::config::AppConfig;
 use ferriso_player::gui::PlayerGui;
 
-fn main() -> ferriso_gui::iced::Result {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = match AppConfig::load() {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("{}", ferriso_diagnostics::render(&error));
+            std::process::exit(2);
+        }
+    };
     ferriso_gui::run(
-        Player::new(),
+        Player::with_config(config.player),
         PlayerGui::new(),
-        Settings {
-            title: "Ferriso · music".into(),
-            size: (1100.0, 760.0),
-        },
-    )
+        config.gui.settings(),
+    )?;
+    Ok(())
 }

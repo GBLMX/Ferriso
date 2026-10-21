@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1424"/>
+      <stop offset="1" stop-color="#071018"/>
+    </linearGradient>
+    <linearGradient id="folder" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6ff2d4"/>
+      <stop offset="1" stop-color="#2a9db5"/>
+    </linearGradient>
+    <linearGradient id="aurora" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6ff2d4" stop-opacity="0.55"/>
+      <stop offset="0.5" stop-color="#7c6cf2" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#e08ab8" stop-opacity="0.5"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+  <path d="M28 96c0-22 18-40 40-40h34l22 26h64c22 0 40 18 40 40v58c0 22-18 40-40 40H68c-22 0-40-18-40-40z" fill="url(#aurora)" opacity="0.5"/>
+  <path d="M44 110c0-14 11-25 25-25h36l18 22h64c14 0 25 11 25 25v52c0 14-11 25-25 25H69c-14 0-25-11-25-25z" fill="url(#folder)"/>
+  <path d="M68 140h120" stroke="#071018" stroke-opacity="0.45" stroke-width="9" stroke-linecap="round"/>
+  <path d="M76 168h60" stroke="#071018" stroke-opacity="0.35" stroke-width="9" stroke-linecap="round"/>
+  <path d="M172 62c18 10 28 28 28 48" stroke="#6ff2d4" stroke-opacity="0.45" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="196" cy="70" r="7" fill="#e08ab8" fill-opacity="0.8"/>
+</svg>

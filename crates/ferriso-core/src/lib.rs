@@ -13,9 +13,14 @@ mod runtime;
 
 pub use app::App;
 pub use command::Command;
-pub use runtime::{CoreEvent, CoreHandle, CoreTask, Snapshots, spawn};
+pub use ferriso_diagnostics::{Diagnostics, EventKind, FrameworkError, TaskId};
+pub use runtime::{
+    CoreEvent, CoreHandle, CoreTask, Snapshots, spawn, spawn_with_debug, spawn_with_diagnostics,
+};
 
 /// Small prelude for application crates.
 pub mod prelude {
-    pub use crate::{App, Command, CoreHandle, Snapshots, spawn};
+    pub use crate::{
+        App, Command, CoreHandle, Diagnostics, Snapshots, spawn, spawn_with_diagnostics,
+    };
 }

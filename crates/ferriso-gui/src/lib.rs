@@ -12,11 +12,21 @@ use std::{
     time::Duration,
 };
 
-use ferriso_core::{App, CoreHandle, Snapshots};
+pub mod art;
+
+use ferriso_core::{App, CoreHandle, Diagnostics, Snapshots};
 use futures::{Stream, stream};
 use iced::{Element, Subscription, Task, Theme};
 
 pub use iced;
+
+/// Stable desktop application id.
+///
+/// On Wayland this becomes `xdg_toplevel.set_app_id`; on X11 it becomes both
+/// `WM_CLASS` parts. KDE Plasma uses it to associate the window with
+/// `packaging/io.github.gblmx.ferriso.desktop` (icon, taskbar grouping, window
+/// rules), so the two names must stay identical.
+pub const APPLICATION_ID: &str = "io.github.gblmx.ferriso";
 
 /// Messages handled by the iced adapter.
 pub enum Message<V, M, L = ()> {
@@ -77,6 +87,11 @@ pub trait Renderer<V, M, L = ()> {
 pub struct Settings {
     pub title: String,
     pub size: (f32, f32),
+    /// Desktop application identity.
+    ///
+    /// On Wayland this is `xdg_toplevel.set_app_id`; on X11 it is `WM_CLASS`.
+    /// It must match the application's desktop file on KDE Plasma.
+    pub application_id: String,
 }
 
 impl Default for Settings {
@@ -84,6 +99,7 @@ impl Default for Settings {
         Self {
             title: "Ferriso".into(),
             size: (1100.0, 760.0),
+            application_id: APPLICATION_ID.into(),
         }
     }
 }
@@ -141,6 +157,42 @@ where
     result
 }
 
+/// Like [`run_with_app`], but starts the actor with caller-owned diagnostics.
+///
+/// The renderer factory receives the same [`Diagnostics`] handle before the
+/// window opens, so a debug overlay can show actor events and a diagnostics
+/// shortcut can export errors/config/environment without touching core state.
+pub fn run_with_app_diagnostics<A, L, R, F, D>(
+    build: F,
+    renderer: D,
+    settings: Settings,
+    diagnostics: Diagnostics,
+) -> iced::Result
+where
+    A: App,
+    A::Message: Clone,
+    L: Send + 'static,
+    R: Renderer<A::View, A::Message, L> + Send + 'static,
+    F: FnOnce() -> A,
+    D: FnOnce(Diagnostics) -> R,
+{
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("failed to start Tokio runtime for the core actor");
+    let (handle, snapshots, task) = {
+        let _enter = runtime.enter();
+        ferriso_core::spawn_with_diagnostics(build(), diagnostics.clone())
+    };
+
+    let result = run_with::<A, L, R>(handle.clone(), snapshots, renderer(diagnostics), settings);
+
+    handle.shutdown();
+    let _ =
+        runtime.block_on(async { tokio::time::timeout(Duration::from_secs(1), task.join()).await });
+    result
+}
+
 /// Attach an iced window to an existing core actor.
 ///
 /// The window owns only a snapshot and a sender. Closing it does not stop a
@@ -166,6 +218,7 @@ where
     let boot = Mutex::new(Some(frontend));
     let title = settings.title;
     let size = settings.size;
+    let application_id = settings.application_id;
     let subscription_snapshots = snapshots.clone();
 
     iced::application(
@@ -188,8 +241,26 @@ where
         ])
     })
     .theme(|frontend: &Frontend<A::View, A::Message, L, R>| frontend.renderer.theme(&frontend.view))
-    .window_size(size)
+    .window(window_settings(size, &application_id))
     .run()
+}
+
+/// Window settings shared by every launch path.
+fn window_settings(size: (f32, f32), application_id: &str) -> iced::window::Settings {
+    iced::window::Settings {
+        size: iced::Size::new(size.0, size.1),
+        #[cfg(target_os = "linux")]
+        platform_specific: iced::window::settings::PlatformSpecific {
+            application_id: application_id.to_owned(),
+            ..Default::default()
+        },
+        #[cfg(not(target_os = "linux"))]
+        platform_specific: {
+            let _ = application_id;
+            Default::default()
+        },
+        ..Default::default()
+    }
 }
 
 fn update<A, L, R>(
@@ -267,5 +338,24 @@ fn map_snapshot<V, M, L: 'static>(event: SnapshotEvent<V>) -> Message<V, M, L> {
     match event {
         SnapshotEvent::Snapshot(view) => Message::Snapshot(view),
         SnapshotEvent::Closed => Message::Closed,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn window_settings_apply_the_requested_size() {
+        let settings = window_settings((900.0, 600.0), APPLICATION_ID);
+        assert_eq!(settings.size.width, 900.0);
+        assert_eq!(settings.size.height, 600.0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn window_settings_expose_a_stable_application_id() {
+        let settings = window_settings((900.0, 600.0), APPLICATION_ID);
+        assert_eq!(settings.platform_specific.application_id, APPLICATION_ID);
     }
 }

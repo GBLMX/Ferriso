@@ -1,0 +1,12 @@
+[package]
+name = "ferriso-diagnostics"
+description = "Error model, pluggable logging, and bounded diagnostics for Ferriso."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+miette = { version = "7", default-features = false, features = ["derive"] }
+thiserror = "2"

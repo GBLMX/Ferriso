@@ -1,0 +1,18 @@
+[package]
+name = "ferriso-floem"
+description = "Floem adapter for Ferriso: reactive native views over immutable core snapshots."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+crossbeam-channel = "0.5"
+ferriso-core = { workspace = true }
+floem = { version = "0.2", default-features = false, features = ["vger"] }
+futures = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

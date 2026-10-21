@@ -8,9 +8,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+ferriso-config = { workspace = true }
+ferriso-diagnostics = { workspace = true }
 ferriso-core = { workspace = true }
 ferriso-gui = { workspace = true }
 ferriso-tui = { workspace = true }
+serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["time"] }
 
 [lib]

@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use ferriso_core::{App, Command};
 
-const TICK: Duration = Duration::from_millis(100);
+use crate::config::PlayerConfig;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Page {
@@ -122,10 +122,17 @@ pub struct Player {
     error: bool,
     loading: bool,
     lyrics: Vec<LyricLine>,
+    tick: Duration,
 }
 
 impl Player {
     pub fn new() -> Self {
+        Self::with_config(PlayerConfig::default())
+    }
+
+    /// Build the model from layered configuration.
+    pub fn with_config(mut config: PlayerConfig) -> Self {
+        config.sanitize();
         Self {
             page: Page::Discover,
             discover: catalog(),
@@ -144,7 +151,7 @@ impl Player {
             search_query: String::new(),
             playing: false,
             position: 0.0,
-            volume: 0.7,
+            volume: config.volume,
             mode: 0,
             liked: false,
             user: None,
@@ -154,6 +161,7 @@ impl Player {
             error: false,
             loading: false,
             lyrics: lyrics(),
+            tick: config.tick(),
         }
     }
 
@@ -308,7 +316,7 @@ impl Player {
             return;
         };
         let duration = song.duration as f64;
-        self.position += TICK.as_secs_f64();
+        self.position += self.tick.as_secs_f64();
         if self.position >= duration {
             if self.mode == 1 {
                 self.position = 0.0;
@@ -588,7 +596,7 @@ impl App for Player {
     }
 
     fn tick_interval(&self) -> Option<Duration> {
-        Some(TICK)
+        Some(self.tick)
     }
 
     fn tick(&mut self) -> Command<Message> {
@@ -746,8 +754,22 @@ mod tests {
 
         player.tick();
         let view = player.view();
-        assert!((view.player.position - TICK.as_secs_f64()).abs() < f64::EPSILON);
+        assert!((view.player.position - player.tick.as_secs_f64()).abs() < f64::EPSILON);
         assert!(view.lyrics.len() > 1);
+    }
+
+    #[test]
+    fn configuration_drives_volume_and_tick() {
+        let mut player = Player::with_config(PlayerConfig {
+            volume: 0.25,
+            tick_ms: 250,
+        });
+        player.update(Message::Play(Page::Discover, 0));
+        player.tick();
+
+        let view = player.view();
+        assert_eq!(view.player.volume, 0.25);
+        assert!((view.player.position - 0.25).abs() < f64::EPSILON);
     }
 
     #[test]

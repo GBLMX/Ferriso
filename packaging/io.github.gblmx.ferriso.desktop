@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Ferriso
+GenericName=Music Player
+Comment=Actor-owned music player with native terminal and desktop frontends
+Exec=ferriso-player-gui
+Icon=io.github.gblmx.ferriso
+Terminal=false
+StartupNotify=false
+Categories=AudioVideo;Player;Audio;
+Keywords=music;player;audio;ferriso;
+# The window's Wayland app_id and X11 WM_CLASS; keep in sync with
+# ferriso_gui::APPLICATION_ID.
+StartupWMClass=io.github.gblmx.ferriso

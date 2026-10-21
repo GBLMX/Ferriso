@@ -1,0 +1,38 @@
+# Sample yazi-desktop configuration.
+#
+# Copy to ~/.config/yazi-desktop/config.toml, or keep this file next to the
+# working directory to use it as the project-local layer. Every key is optional;
+# omitted keys keep the built-in defaults. Unknown keys are rejected.
+#
+# Precedence (lowest to highest):
+#   defaults < /etc/yazi-desktop/config.toml < user config
+#   < ./yazi-desktop.toml < $YAZI_DESKTOP_CONFIG
+#   < YAZI_DESKTOP__SECTION__KEY environment variables
+
+[start]
+# Initial directory. `~` expands to $HOME.
+path = "~"
+# Include dotfiles.
+show_hidden = false
+
+[window]
+title = "yazi-desktop"
+# Logical pixels; values below 640x420 are clamped.
+width = 1240.0
+height = 780.0
+
+[art]
+# Animated WGSL aurora backdrop.
+enabled = true
+# Ribbon strength, 0.0..=1.0.
+intensity = 0.85
+# Animation speed multiplier, 0.0..=4.0.
+speed = 1.0
+
+[debug]
+# Capture events and enable verbose logging. Production default: false.
+enabled = false
+# Open the event panel at startup. Implies capture.
+overlay = false
+# Install the built-in stderr logger. Swap for your own Logger in code.
+stderr = false

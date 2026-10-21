@@ -1,0 +1,29 @@
+[package]
+name = "ferriso-yazi-desktop"
+description = "yazi-desktop: a keyboard-driven iced file manager on the Ferriso actor contract."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
+ferriso-config = { workspace = true }
+ferriso-diagnostics = { workspace = true }
+ferriso-core = { workspace = true }
+ferriso-gui = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "time"] }
+
+[lib]
+name = "ferriso_yazi_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "yazi-desktop"
+path = "src/main.rs"

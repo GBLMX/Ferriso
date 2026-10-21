@@ -1,0 +1,26 @@
+# Ferriso project-local configuration (layer 4 of 6).
+#
+# Precedence, lowest to highest:
+#   built-in defaults < /etc/ferriso/config.toml < user config
+#   < this file < $FERRISO_CONFIG < FERRISO__SECTION__KEY environment variables
+#
+# Every optional file may set a subset of these keys; missing keys keep the
+# built-in defaults. See README.md for the full list of locations.
+
+[player]
+# Initial volume, clamped to 0.0..=1.0.
+volume = 0.7
+# Actor tick and playback step, in milliseconds. Must be at least 1.
+tick_ms = 100
+
+[tui]
+# Capture mouse events in the terminal.
+mouse = false
+# Maximum block while waiting for a terminal event, in milliseconds.
+poll_ms = 50
+
+[gui]
+title = "Ferriso · music"
+# Window size in logical pixels; values below 320x240 are clamped.
+width = 1100.0
+height = 760.0

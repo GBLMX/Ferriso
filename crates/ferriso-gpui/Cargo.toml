@@ -1,0 +1,22 @@
+[package]
+name = "ferriso-gpui"
+description = "GPUI adapter for Ferriso: entity-rendered immutable core snapshots."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ferriso-core = { workspace = true }
+futures = "0.3"
+gpui = "0.2.2"
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+
+# gpui 0.2's zed-async-tar -> xattr 0.2 still refers to libc::ENOATTR,
+# which libc removed in 0.2.191. Keep the compatible patch resolved.
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.189"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

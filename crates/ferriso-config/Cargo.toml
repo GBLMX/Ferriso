@@ -1,0 +1,17 @@
+[package]
+name = "ferriso-config"
+description = "One-stop layered configuration for Ferriso, built on config-rs."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+config = { version = "0.15", default-features = false, features = ["toml"] }
+miette = { version = "7", default-features = false, features = ["derive"] }
+serde = "1"
+thiserror = "2"
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }

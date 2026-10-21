@@ -55,6 +55,15 @@ pub trait App: Send + 'static {
         false
     }
 
+    /// Describe one message for the debug tap.
+    ///
+    /// Called only by [`crate::spawn_with_debug`], on the actor task, before
+    /// the message is applied. Return `None` to fall back to the message type
+    /// name. Keep this cheap; it is not part of normal operation.
+    fn debug(&self, _message: &Self::Message) -> Option<String> {
+        None
+    }
+
     /// Last chance to release resources before the actor exits.
     fn shutdown(&mut self) {}
 }
