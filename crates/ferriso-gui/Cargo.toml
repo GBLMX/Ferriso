@@ -1,0 +1,14 @@
+[package]
+name = "ferriso-gui"
+description = "Iced adapter for Ferriso: snapshot-driven rendering, never domain-state ownership."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ferriso-core = { workspace = true }
+iced = { version = "0.14", features = ["tokio"] }
+futures = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }

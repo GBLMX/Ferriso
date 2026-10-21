@@ -1,14 +1,12 @@
 //! A music-player application used to exercise Ferriso end to end.
 //!
-//! There is no network here on purpose: the data is local and asynchronous loading is simulated,
-//! so both renderers can be run and compared without an account or a server. The structure is
-//! the one boxpigma's desktop window uses — sidebar, page, player bar — and every widget the
-//! real app needs is present: navigation, search input, virtual rows, sliders, a QR login code,
-//! lyrics, and a live spectrum.
+//! The state, messages, and view model here are frontend-neutral. The terminal
+//! and iced renderers live in `tui.rs` and `gui.rs`; they share this data, not
+//! a widget tree or a layout engine.
 
 use std::time::Duration;
 
-use ferriso::prelude::*;
+use ferriso_core::{App, Command};
 
 const TICK: Duration = Duration::from_millis(100);
 
@@ -25,7 +23,16 @@ pub enum Page {
 }
 
 impl Page {
-    fn label(self) -> &'static str {
+    pub const NAV: [Self; 6] = [
+        Self::Discover,
+        Self::Toplists,
+        Self::Playlists,
+        Self::Search,
+        Self::Queue,
+        Self::Lyrics,
+    ];
+
+    pub fn label(self) -> &'static str {
         match self {
             Self::Discover => "每日推荐",
             Self::Toplists => "排行榜",
@@ -79,6 +86,7 @@ pub enum Message {
     Previous,
     CycleMode,
     Seek(f64),
+    SeekRelative(f64),
     SeekCommit,
     Volume(f64),
     ToggleLike,
@@ -89,7 +97,6 @@ pub enum Message {
     LoggedIn,
     Logout,
     OfferLoginQr,
-    Tick,
 }
 
 pub struct Player {
@@ -292,415 +299,146 @@ impl Player {
         }
     }
 
-    fn content(&self) -> Node<'_, Message> {
-        match self.page {
-            Page::Lyrics => self.lyrics_page(),
-            Page::Login => self.login_page(),
-            Page::Toplists | Page::Playlists => self.collections_page(),
-            _ => self.songs_page(),
+    fn advance(&mut self) {
+        if !self.playing {
+            return;
+        }
+        let Some(song) = self.current_song() else {
+            self.playing = false;
+            return;
+        };
+        let duration = song.duration as f64;
+        self.position += TICK.as_secs_f64();
+        if self.position >= duration {
+            if self.mode == 1 {
+                self.position = 0.0;
+            } else {
+                self.next();
+            }
         }
     }
 
-    fn songs_page(&self) -> Node<'_, Message> {
-        let songs = self.songs();
-        let page = self.page;
-        let title = match page {
+    fn view_model(&self) -> ViewModel {
+        let page_title = match self.page {
             Page::Detail => self
                 .detail
                 .as_ref()
-                .map(|(title, _, _)| title.as_str())
-                .unwrap_or("歌单详情"),
-            Page::Search if !self.search_query.is_empty() => self.search_query.as_str(),
-            other => other.label(),
+                .map(|(title, _, _)| title.clone())
+                .unwrap_or_else(|| Page::Detail.label().to_string()),
+            Page::Search if !self.search_query.is_empty() => {
+                format!("搜索：{}", self.search_query)
+            }
+            page => page.label().to_string(),
         };
 
-        let mut header = row()
-            .spacing(8)
-            .align_y(Align::Center)
-            .push(text(title).size(18).bold())
-            .push(text(format!("{} 首", songs.len())).size(12).tone(Tone::Muted))
-            .push(space());
-        if self.page == Page::Detail {
-            header = header.push(
-                button("返回", Message::Back)
-                    .kind(ButtonKind::Ghost)
-                    .padding(Padding::symmetric(8, 2)),
-            );
-        }
-        header = header.push(
-            button("刷新", Message::Refresh)
-                .kind(ButtonKind::Ghost)
-                .padding(Padding::symmetric(8, 2)),
-        );
-
-        if songs.is_empty() {
-            let hint = if self.loading {
-                "加载中…"
-            } else if self.page == Page::Search {
-                "没有匹配的歌曲，回车搜索全部曲库"
-            } else {
-                "这里还没有歌曲"
-            };
-            return column()
-                .spacing(10)
-                .height(Length::Fill)
-                .padding(Padding::symmetric(4, 2))
-                .push(header)
-                .push(text(hint).size(13).tone(Tone::Muted))
-                .into();
-        }
-
-        let items = songs
+        let songs = self
+            .songs()
             .iter()
             .enumerate()
-            .map(|(index, song)| {
-                let playing = self.is_playing_row(page, index);
-                ListItem::new(song.title.clone())
-                    .leading(if playing {
-                        "▶".to_string()
-                    } else {
-                        format!("{:>2}", index + 1)
-                    })
-                    .subtitle(format!("{} · {}", song.artist, song.album))
-                    .trailing(format_duration(song.duration))
-                    .accent(playing)
+            .map(|(index, song)| SongRow {
+                title: song.title.clone(),
+                subtitle: format!("{} · {}", song.artist, song.album),
+                duration: format_duration(song.duration),
+                playing: self.is_playing_row(self.page, index),
             })
-            .collect::<Vec<_>>();
+            .collect();
 
-        let list = List::new(items)
-            .selected(self.selected)
-            .on_select(Message::Selected)
-            .on_activate(move |index| Message::Play(page, index))
-            .height(Length::Fill);
-
-        column()
-            .spacing(8)
-            .height(Length::Fill)
-            .padding(Padding::symmetric(4, 2))
-            .push(header)
-            .push(list)
-            .into()
-    }
-
-    fn collections_page(&self) -> Node<'_, Message> {
-        let items = self
-            .collections
+        let nav = Page::NAV
             .iter()
-            .enumerate()
-            .map(|(index, (title, kind))| {
-                ListItem::new(title.clone())
-                    .leading(format!("{:>2}", index + 1))
-                    .subtitle(kind.clone())
-                    .accent(index == 0)
+            .map(|&page| NavItem {
+                page,
+                label: page.label(),
+                selected: self.page == page
+                    || (self.page == Page::Detail
+                        && self
+                            .detail
+                            .as_ref()
+                            .is_some_and(|(_, _, back)| *back == page)),
             })
-            .collect::<Vec<_>>();
-        let list = List::new(items)
-            .on_activate(Message::OpenCollection)
-            .height(Length::Fill);
-        column()
-            .spacing(8)
-            .height(Length::Fill)
-            .padding(Padding::symmetric(4, 2))
-            .push(
-                row()
-                    .spacing(8)
-                    .align_y(Align::Center)
-                    .push(text(self.page.label()).size(18).bold())
-                    .push(text("点击一项打开").size(12).tone(Tone::Muted)),
-            )
-            .push(list)
-            .into()
-    }
+            .collect();
 
-    fn lyrics_page(&self) -> Node<'_, Message> {
-        if self.current_song().is_none() {
-            return column()
-                .padding(Padding::all(12))
-                .push(text("播放一首歌后这里显示歌词").tone(Tone::Muted))
-                .into();
-        }
-        let active = self.active_lyric();
-        let mut lines = column().spacing(10).padding(Padding::symmetric(24, 10));
-        for (index, line) in self.lyrics.iter().enumerate() {
-            let is_active = active == Some(index);
-            lines = lines.push(
-                text(line.text.clone())
-                    .size(if is_active { 20 } else { 14 })
-                    .tone(if is_active { Tone::Accent } else { Tone::Muted })
-                    .weight(if is_active { Weight::Bold } else { Weight::Normal }),
-            );
-        }
-        Scroll::new(lines).height(Length::Fill).into()
-    }
+        let lyrics = self
+            .lyrics
+            .iter()
+            .map(|line| LyricRow {
+                text: line.text.clone(),
+            })
+            .collect();
 
-    fn login_page(&self) -> Node<'_, Message> {
-        let content = if let Some(user) = &self.user {
-            column()
-                .spacing(8)
-                .align_x(Align::Center)
-                .push(text(format!("已登录：{user}")).size(18).bold())
-                .push(text("本地演示会话，不会连接服务器").size(12).tone(Tone::Muted))
-                .push(button("退出登录", Message::Logout))
-        } else if let Some(qr) = &self.qr {
-            column()
-                .spacing(8)
-                .align_x(Align::Center)
-                .push(Qr::new(qr.clone()).size(240).quiet_zone(2))
-                .push(text(self.qr_status.clone()).size(13).tone(Tone::Muted))
-                .push(
-                    row()
-                        .spacing(8)
-                        .push(button("刷新二维码", Message::Login))
-                        .push(
-                            button("模拟扫码成功", Message::LoggedIn)
-                                .kind(ButtonKind::Primary),
-                        ),
-                )
-        } else {
-            column()
-                .spacing(8)
-                .align_x(Align::Center)
-                .push(text("尚未登录").size(18).bold())
-                .push(
-                    text("搜索、排行榜不需要登录；每日推荐与「我喜欢」需要。")
-                        .size(12)
-                        .tone(Tone::Muted),
-                )
-                .push(button("生成登录二维码", Message::OfferLoginQr))
-        };
-        column()
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Align::Center)
-            .align_y(Align::Center)
-            .push(content)
-            .into()
-    }
-
-    fn sidebar(&self) -> Node<'_, Message> {
-        let mut nav = column().spacing(4);
-        for page in [
-            Page::Discover,
-            Page::Toplists,
-            Page::Playlists,
-            Page::Search,
-            Page::Queue,
-            Page::Lyrics,
-        ] {
-            let selected = self.page == page
-                || (self.page == Page::Detail
-                    && self
-                        .detail
-                        .as_ref()
-                        .is_some_and(|(_, _, back)| *back == page));
-            nav = nav.push(
-                button(page.label(), Message::Navigate(page))
-                    .width(Length::Fill)
-                    .padding(Padding::symmetric(10, 6))
-                    .kind(if selected {
-                        ButtonKind::Primary
-                    } else {
-                        ButtonKind::Ghost
-                    }),
-            );
-        }
-
-        let session = if self.user.is_some() {
-            button("退出登录", Message::Logout)
-                .width(Length::Fill)
-                .padding(Padding::symmetric(10, 6))
-        } else {
-            button(
-                if self.page == Page::Login {
-                    "登录中…"
-                } else {
-                    "扫码登录"
-                },
-                Message::Navigate(Page::Login),
-            )
-            .width(Length::Fill)
-            .padding(Padding::symmetric(10, 6))
+        let login = match (&self.user, &self.qr) {
+            (Some(user), _) => LoginView::LoggedIn { user: user.clone() },
+            (None, Some(data)) => LoginView::Qr {
+                data: data.clone(),
+                status: self.qr_status.clone(),
+            },
+            (None, None) => LoginView::LoggedOut,
         };
 
-        column()
-            .width(Length::Fixed(190))
-            .height(Length::Fill)
-            .fill(Tone::Surface)
-            .padding(Padding::all(14))
-            .spacing(8)
-            .push(text("Ferriso").size(22).bold().tone(Tone::Accent))
-            .push(text("one model · two renderers").size(11).tone(Tone::Muted))
-            .push(nav)
-            .push(space())
-            .push(session)
-            .push(
-                text("Ctrl+空格 播放/暂停\nCtrl+←/→ 上一首/下一首\nTab 移动焦点 · Enter 激活")
-                    .size(11)
-                    .tone(Tone::Muted),
-            )
-            .into()
-    }
-
-    fn top_bar(&self) -> Node<'_, Message> {
-        let badge = match &self.user {
-            Some(user) => format!("{user} · 已登录"),
-            None => "未登录".to_string(),
-        };
-        let mut bar = column()
-            .spacing(6)
-            .push(
-                row()
-                    .spacing(8)
-                    .align_y(Align::Center)
-                    .push(text(self.page.label()).size(22).bold())
-                    .push(
-                        TextInput::new(self.search.as_str())
-                            .placeholder("搜索歌曲，回车确认")
-                            .on_input(Message::SearchChanged)
-                            .on_submit(Message::SearchSubmit)
-                            .padding(Padding::symmetric(10, 6)),
-                    )
-                    .push(text(badge).size(12).tone(Tone::Muted)),
-            )
-            .push(
-                text(self.banner.clone())
-                    .size(12)
-                    .tone(if self.error { Tone::Danger } else { Tone::Muted }),
-            );
-        if self.loading {
-            bar = bar.push(text("加载中…").size(12).tone(Tone::Warning));
-        }
-        bar.into()
-    }
-
-    fn player_bar(&self) -> Node<'_, Message> {
         let song = self.current_song();
-        let title = song
-            .map(|song| song.title.clone())
-            .unwrap_or_else(|| "未在播放".to_string());
-        let artist = song
-            .map(|song| format!("{} · {}", song.artist, song.album))
-            .unwrap_or_default();
-        let duration = song.map(|song| song.duration).unwrap_or(0);
+        let spectrum = if self.playing {
+            (0..28)
+                .map(|index| {
+                    let phase = self.position * 5.0 + f64::from(index) * 0.7;
+                    let level = (phase.sin() * 0.5 + 0.5).mul_add(0.7, 0.3);
+                    (level * 100.0) as u8
+                })
+                .collect()
+        } else {
+            vec![0; 28]
+        };
 
-        let art = Image::new(None)
-            .alt("♪")
-            .width(Length::Fixed(64))
-            .height(Length::Fixed(64))
-            .radius(8);
-
-        let play_label = if self.playing { "暂停" } else { "播放" };
-        let like_label = if self.liked { "取消喜欢" } else { "喜欢" };
-        let mode = ["顺序播放", "单曲循环", "随机播放"][usize::from(self.mode) % 3];
-
-        let controls = row()
-            .spacing(6)
-            .align_y(Align::Center)
-            .push(
-                button("上一首", Message::Previous)
-                    .kind(ButtonKind::Ghost)
-                    .padding(Padding::symmetric(10, 4)),
-            )
-            .push(
-                button(play_label, Message::PlayPause)
-                    .kind(ButtonKind::Primary)
-                    .padding(Padding::symmetric(14, 4)),
-            )
-            .push(
-                button("下一首", Message::Next)
-                    .kind(ButtonKind::Ghost)
-                    .padding(Padding::symmetric(10, 4)),
-            )
-            .push(
-                button(mode, Message::CycleMode)
-                    .kind(ButtonKind::Ghost)
-                    .padding(Padding::symmetric(10, 4)),
-            )
-            .push(
-                button(like_label, Message::ToggleLike)
-                    .kind(ButtonKind::Ghost)
-                    .padding(Padding::symmetric(10, 4)),
-            );
-
-        let info = column()
-            .spacing(4)
-            .width(Length::Fill)
-            .push(text(title).size(16).bold())
-            .push(text(artist).size(12).tone(Tone::Muted))
-            .push(controls);
-
-        let volume = row()
-            .spacing(6)
-            .width(Length::Fixed(140))
-            .align_y(Align::Center)
-            .push(text("音量").size(11).tone(Tone::Muted))
-            .push(
-                Slider::new(0.0, 1.0, self.volume)
-                    .on_change(Message::Volume)
-                    .width(Length::Fixed(96)),
-            );
-
-        let position = self.position.clamp(0.0, (duration as f64).max(0.0));
-        let progress = row()
-            .spacing(8)
-            .align_y(Align::Center)
-            .push(
-                text(format_duration((position * 1000.0) as u64))
-                    .size(11)
-                    .tone(Tone::Muted),
-            )
-            .push(
-                Slider::new(0.0, (duration as f64).max(0.001), position)
-                    .on_change(Message::Seek)
-                    .on_release(Message::SeekCommit),
-            )
-            .push(
-                text(format_duration(duration))
-                    .size(11)
-                    .tone(Tone::Muted),
-            );
-
-        column()
-            .spacing(8)
-            .padding(Padding::all(12))
-            .fill(Tone::Surface)
-            .radius(10)
-            .push(
-                row()
-                    .spacing(16)
-                    .align_y(Align::Center)
-                    .push(art)
-                    .push(info)
-                    .push(self.spectrum())
-                    .push(volume),
-            )
-            .push(progress)
-            .into()
+        ViewModel {
+            page: self.page,
+            page_title,
+            nav,
+            search: self.search.clone(),
+            user: self.user.clone(),
+            banner: self.banner.clone(),
+            error: self.error,
+            loading: self.loading,
+            songs,
+            selected: self.selected,
+            show_back: self.page == Page::Detail,
+            collections: self
+                .collections
+                .iter()
+                .map(|(title, kind)| CollectionRow {
+                    title: title.clone(),
+                    kind: kind.clone(),
+                })
+                .collect(),
+            lyrics,
+            active_lyric: self.active_lyric(),
+            login,
+            player: PlayerView {
+                title: song
+                    .map(|song| song.title.clone())
+                    .unwrap_or_else(|| "未在播放".to_string()),
+                subtitle: song
+                    .map(|song| format!("{} · {}", song.artist, song.album))
+                    .unwrap_or_default(),
+                has_song: song.is_some(),
+                playing: self.playing,
+                position: self.position,
+                duration: song.map(|song| song.duration).unwrap_or(0),
+                volume: self.volume,
+                mode: self.mode,
+                liked: self.liked,
+                spectrum,
+            },
+        }
     }
+}
 
-    fn spectrum(&self) -> Node<'_, Message> {
-        let mut bars = row().spacing(2).height(Length::Fixed(40)).align_y(Align::End);
-        if !self.playing {
-            return bars.width(Length::Fixed(120)).into();
-        }
-        for index in 0..28 {
-            let phase = self.position * 5.0 + f64::from(index) * 0.7;
-            let level = (phase.sin() * 0.5 + 0.5).mul_add(0.7, 0.3);
-            let height = (level * 36.0).max(2.0) as u16;
-            bars = bars.push(
-                column()
-                    .width(Length::Fixed(4))
-                    .height(Length::Fixed(height))
-                    .fill(Tone::Accent)
-                    .radius(1),
-            );
-        }
-        bars.width(Length::Fixed(120)).into()
+impl Default for Player {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl App for Player {
     type Message = Message;
+    type View = ViewModel;
 
     fn init(&mut self) -> Command<Message> {
         self.load_songs()
@@ -764,8 +502,16 @@ impl App for Player {
                 self.error = false;
             }
             Message::Seek(value) => self.position = value,
+            Message::SeekRelative(delta) => {
+                if let Some(song) = self.current_song() {
+                    self.position = (self.position + delta).clamp(0.0, song.duration as f64);
+                }
+            }
             Message::SeekCommit => {
-                self.banner = format!("跳转到 {}", format_duration((self.position * 1000.0) as u64));
+                self.banner = format!(
+                    "跳转到 {}",
+                    format_duration((self.position * 1000.0) as u64)
+                );
                 self.error = false;
             }
             Message::Volume(value) => self.volume = value.clamp(0.0, 1.0),
@@ -790,9 +536,7 @@ impl App for Player {
                 let songs = catalog()
                     .into_iter()
                     .filter(|song| {
-                        kind == "热歌"
-                            || song.album.contains(&kind)
-                            || song.artist.contains(&kind)
+                        kind == "热歌" || song.album.contains(&kind) || song.artist.contains(&kind)
                     })
                     .collect::<Vec<_>>();
                 let (back, songs) = if songs.is_empty() {
@@ -835,45 +579,12 @@ impl App for Player {
                 self.banner = "已退出登录".into();
                 self.error = false;
             }
-            Message::Tick => {
-                if !self.playing {
-                    return Command::none();
-                }
-                let Some(song) = self.current_song() else {
-                    self.playing = false;
-                    return Command::none();
-                };
-                let duration = song.duration as f64;
-                self.position += TICK.as_secs_f64();
-                if self.position >= duration {
-                    if self.mode == 1 {
-                        self.position = 0.0;
-                    } else {
-                        self.next();
-                    }
-                }
-            }
         }
         Command::none()
     }
 
-    fn view(&self) -> Node<'_, Message> {
-        let right = column()
-            .spacing(8)
-            .height(Length::Fill)
-            .push(self.top_bar())
-            .push(self.content())
-            .push(self.player_bar());
-
-        row()
-            .height(Length::Fill)
-            .push(self.sidebar())
-            .push(right)
-            .into()
-    }
-
-    fn title(&self) -> &str {
-        "Ferriso · music"
+    fn view(&self) -> ViewModel {
+        self.view_model()
     }
 
     fn tick_interval(&self) -> Option<Duration> {
@@ -881,24 +592,85 @@ impl App for Player {
     }
 
     fn tick(&mut self) -> Command<Message> {
-        self.update(Message::Tick)
-    }
-
-    fn on_key(&mut self, event: KeyEvent) -> Command<Message> {
-        if !event.is_press() || !event.modifiers.is_shortcut() {
-            return Command::none();
-        }
-        let message = match event.key {
-            Key::Space => Message::PlayPause,
-            Key::Left => Message::Previous,
-            Key::Right => Message::Next,
-            _ => return Command::none(),
-        };
-        self.update(message)
+        self.advance();
+        Command::none()
     }
 }
 
-fn format_duration(milliseconds: u64) -> String {
+#[derive(Clone, Debug)]
+pub struct ViewModel {
+    pub page: Page,
+    pub page_title: String,
+    pub nav: Vec<NavItem>,
+    pub search: String,
+    pub user: Option<String>,
+    pub banner: String,
+    pub error: bool,
+    pub loading: bool,
+    pub songs: Vec<SongRow>,
+    pub selected: Option<usize>,
+    pub show_back: bool,
+    pub collections: Vec<CollectionRow>,
+    pub lyrics: Vec<LyricRow>,
+    pub active_lyric: Option<usize>,
+    pub login: LoginView,
+    pub player: PlayerView,
+}
+
+#[derive(Clone, Debug)]
+pub struct NavItem {
+    pub page: Page,
+    pub label: &'static str,
+    pub selected: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct SongRow {
+    pub title: String,
+    pub subtitle: String,
+    pub duration: String,
+    pub playing: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct CollectionRow {
+    pub title: String,
+    pub kind: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct LyricRow {
+    pub text: String,
+}
+
+#[derive(Clone, Debug)]
+pub enum LoginView {
+    LoggedOut,
+    Qr { data: String, status: String },
+    LoggedIn { user: String },
+}
+
+#[derive(Clone, Debug)]
+pub struct PlayerView {
+    pub title: String,
+    pub subtitle: String,
+    pub has_song: bool,
+    pub playing: bool,
+    pub position: f64,
+    pub duration: u64,
+    pub volume: f64,
+    pub mode: u8,
+    pub liked: bool,
+    pub spectrum: Vec<u8>,
+}
+
+impl PlayerView {
+    pub fn mode_label(&self) -> &'static str {
+        ["顺序播放", "单曲循环", "随机播放"][usize::from(self.mode) % 3]
+    }
+}
+
+pub fn format_duration(milliseconds: u64) -> String {
     let seconds = milliseconds / 1000;
     format!("{:02}:{:02}", seconds / 60, seconds % 60)
 }
@@ -922,13 +694,76 @@ fn catalog() -> Vec<Song> {
 
 fn lyrics() -> Vec<LyricLine> {
     vec![
-        LyricLine { at: 0.0, text: "（前奏）".into() },
-        LyricLine { at: 12.0, text: "这是一段本地演示歌词".into() },
-        LyricLine { at: 20.0, text: "渲染器换了，歌词的时钟没有换".into() },
-        LyricLine { at: 28.0, text: "同一个 model，同一个 view".into() },
-        LyricLine { at: 36.0, text: "终端里是字符，窗口里是像素".into() },
-        LyricLine { at: 44.0, text: "焦点、滚动和文本光标由后端各自处理".into() },
-        LyricLine { at: 52.0, text: "状态只经过一次 update".into() },
-        LyricLine { at: 60.0, text: "—— Ferriso".into() },
+        LyricLine {
+            at: 0.0,
+            text: "（前奏）".into(),
+        },
+        LyricLine {
+            at: 12.0,
+            text: "这是一段本地演示歌词".into(),
+        },
+        LyricLine {
+            at: 20.0,
+            text: "状态在 actor 里，界面只是快照".into(),
+        },
+        LyricLine {
+            at: 28.0,
+            text: "同一个 view model，两套原生布局".into(),
+        },
+        LyricLine {
+            at: 36.0,
+            text: "终端里是字符，窗口里是像素".into(),
+        },
+        LyricLine {
+            at: 44.0,
+            text: "焦点、滚动和文本光标由前端各自处理".into(),
+        },
+        LyricLine {
+            at: 52.0,
+            text: "领域状态只经过一次 update".into(),
+        },
+        LyricLine {
+            at: 60.0,
+            text: "—— Ferriso".into(),
+        },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn playing_updates_the_view_and_tick_advances_it() {
+        let mut player = Player::new();
+        player.update(Message::Play(Page::Discover, 0));
+
+        let view = player.view();
+        assert_eq!(view.player.title, "夏日漱石");
+        assert!(view.player.playing);
+        assert!(view.songs[0].playing);
+        assert_eq!(view.selected, Some(0));
+
+        player.tick();
+        let view = player.view();
+        assert!((view.player.position - TICK.as_secs_f64()).abs() < f64::EPSILON);
+        assert!(view.lyrics.len() > 1);
+    }
+
+    #[test]
+    fn login_is_a_snapshot_state_not_a_renderer_flag() {
+        let mut player = Player::new();
+        player.update(Message::OfferLoginQr);
+        let view = player.view();
+        assert!(matches!(view.login, LoginView::LoggedOut));
+
+        player.update(Message::QrReady("https://example.invalid/qr".into()));
+        let view = player.view();
+        assert!(matches!(view.login, LoginView::Qr { .. }));
+
+        player.update(Message::LoggedIn);
+        let view = player.view();
+        assert!(matches!(view.login, LoginView::LoggedIn { .. }));
+        assert_eq!(view.user.as_deref(), Some("Ferriso 用户"));
+    }
 }

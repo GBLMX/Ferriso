@@ -1,6 +1,6 @@
 [package]
 name = "ferriso-player"
-description = "The Ferriso practice app: one music-player model, two renderers."
+description = "The Ferriso practice app: one actor-owned model, two native renderers."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,10 +8,14 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ferriso = { workspace = true }
-ferriso-iced = { workspace = true }
-ferriso-ratatui = { workspace = true }
+ferriso-core = { workspace = true }
+ferriso-gui = { workspace = true }
+ferriso-tui = { workspace = true }
 tokio = { version = "1", features = ["time"] }
+
+[lib]
+name = "ferriso_player"
+path = "src/lib.rs"
 
 [[bin]]
 name = "ferriso-player-tui"

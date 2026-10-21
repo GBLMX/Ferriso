@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/ferriso", "crates/ferriso-ratatui", "crates/ferriso-iced", "apps/player"]
+members = ["crates/ferriso-core", "crates/ferriso-tui", "crates/ferriso-gui", "apps/player"]
 resolver = "3"
 
 [workspace.package]
@@ -10,9 +10,9 @@ license = "MIT"
 repository = "https://github.com/GBLMX/Ferriso"
 
 [workspace.dependencies]
-ferriso = { path = "crates/ferriso" }
-ferriso-ratatui = { path = "crates/ferriso-ratatui" }
-ferriso-iced = { path = "crates/ferriso-iced" }
+ferriso-core = { path = "crates/ferriso-core" }
+ferriso-tui = { path = "crates/ferriso-tui" }
+ferriso-gui = { path = "crates/ferriso-gui" }
 
 [profile.release]
 lto = true
