@@ -37,10 +37,8 @@ impl Config {
     ///
     /// The layer list carries paths and existence flags only, never values.
     pub fn load_detailed() -> Result<(Self, Vec<SourceInfo>), ferriso_config::ConfigError> {
-        let loader = ferriso_config::Loader::new(APP);
-        let sources = loader.sources();
-        let config = loader.load::<Self>()?.sanitized();
-        Ok((config, sources))
+        let (config, sources) = ferriso_config::Loader::new(APP).load_with_sources::<Self>()?;
+        Ok((config.sanitized(), sources))
     }
 
     /// Secret-free configuration summary with every layer and its status.

@@ -75,7 +75,23 @@ pub trait Renderer<V, M, L = ()> {
 
     /// Observe a new snapshot before it replaces the previous one. Cover and
     /// QR caches, notifications, and other view-local bookkeeping belong here.
+    ///
+    /// This hook has no way to return an iced [`Task`]. Use
+    /// [`Renderer::on_snapshot_task`] when snapshot handling also needs to
+    /// focus a widget or start renderer-local work.
     fn on_snapshot(&mut self, _view: &V) {}
+
+    /// Observe a snapshot and schedule renderer-local work.
+    ///
+    /// Called once for the boot snapshot and again for every later snapshot,
+    /// before the adapter stores it. The default forwards to
+    /// [`Renderer::on_snapshot`] and returns no task, so existing bookkeeping
+    /// hooks keep working. Override this method instead of `on_snapshot` when
+    /// the snapshot should focus or operate a widget.
+    fn on_snapshot_task(&mut self, view: &V) -> Task<Message<V, M, L>> {
+        self.on_snapshot(view);
+        Task::none()
+    }
 
     /// The window theme for this snapshot. The default follows the system.
     fn theme(&self, _view: &V) -> Theme {
@@ -109,6 +125,28 @@ struct Frontend<V, M, L, R> {
     handle: CoreHandle<M>,
     renderer: R,
     _local: PhantomData<L>,
+}
+
+impl<V, M, L, R> Frontend<V, M, L, R>
+where
+    R: Renderer<V, M, L>,
+{
+    fn new(view: Arc<V>, handle: CoreHandle<M>, renderer: R) -> (Self, Task<Message<V, M, L>>) {
+        let mut frontend = Self {
+            view,
+            handle,
+            renderer,
+            _local: PhantomData,
+        };
+        let task = frontend.renderer.on_snapshot_task(&frontend.view);
+        (frontend, task)
+    }
+
+    fn apply_snapshot(&mut self, view: Arc<V>) -> Task<Message<V, M, L>> {
+        let task = self.renderer.on_snapshot_task(&view);
+        self.view = view;
+        task
+    }
 }
 
 /// Spawn `app` on a private Tokio runtime and open an iced window.
@@ -209,13 +247,7 @@ where
     L: Send + 'static,
     R: Renderer<A::View, A::Message, L> + Send + 'static,
 {
-    let frontend = Frontend {
-        view: snapshots.current(),
-        handle,
-        renderer,
-        _local: PhantomData,
-    };
-    let boot = Mutex::new(Some(frontend));
+    let boot = Mutex::new(Some((snapshots.current(), handle, renderer)));
     let title = settings.title;
     let size = settings.size;
     let application_id = settings.application_id;
@@ -223,12 +255,12 @@ where
 
     iced::application(
         move || {
-            let frontend = boot
+            let (view, handle, renderer) = boot
                 .lock()
                 .expect("boot lock poisoned")
                 .take()
                 .expect("iced booted more than once");
-            (frontend, Task::none())
+            Frontend::new(view, handle, renderer)
         },
         update::<A, L, R>,
         view::<A, L, R>,
@@ -281,11 +313,7 @@ where
             }
         }
         Message::Local(local) => frontend.renderer.update(local, &frontend.view),
-        Message::Snapshot(view) => {
-            frontend.renderer.on_snapshot(&view);
-            frontend.view = view;
-            Task::none()
-        }
+        Message::Snapshot(view) => frontend.apply_snapshot(view),
         Message::Closed => iced::exit(),
     }
 }
@@ -357,5 +385,59 @@ mod tests {
     fn window_settings_expose_a_stable_application_id() {
         let settings = window_settings((900.0, 600.0), APPLICATION_ID);
         assert_eq!(settings.platform_specific.application_id, APPLICATION_ID);
+    }
+
+    #[test]
+    fn snapshot_hooks_run_for_boot_and_later_views() {
+        use ferriso_core::Command;
+
+        struct Idle;
+
+        impl App for Idle {
+            type Message = u32;
+            type View = u32;
+
+            fn update(&mut self, _message: u32) -> Command<u32> {
+                Command::none()
+            }
+
+            fn view(&self) -> u32 {
+                0
+            }
+        }
+
+        #[derive(Default)]
+        struct Hooked {
+            seen: Vec<u32>,
+        }
+
+        impl Renderer<u32, u32, ()> for Hooked {
+            fn view<'a>(&'a self, _view: &'a u32) -> Element<'a, Message<u32, u32, ()>> {
+                iced::widget::text("").into()
+            }
+
+            fn on_snapshot(&mut self, view: &u32) {
+                self.seen.push(*view);
+            }
+        }
+
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .expect("test runtime");
+        let _enter = runtime.enter();
+        let (handle, _snapshots, task) = ferriso_core::spawn(Idle);
+        let shutdown = handle.clone();
+
+        let (mut frontend, _boot) =
+            Frontend::<u32, u32, (), Hooked>::new(Arc::new(0), handle, Hooked::default());
+        let _later = frontend.apply_snapshot(Arc::new(1));
+
+        assert_eq!(frontend.renderer.seen, vec![0, 1]);
+
+        shutdown.shutdown();
+        let _ = runtime
+            .block_on(async { tokio::time::timeout(Duration::from_secs(1), task.join()).await });
     }
 }

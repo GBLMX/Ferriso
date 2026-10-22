@@ -82,12 +82,38 @@ Rules that keep the boundary real:
 - Snapshots are delivered over a `tokio::sync::watch` channel. A slow frontend
   gets the newest state instead of a backlog.
 
+### Snapshot hooks
+
+Every adapter treats the boot snapshot like any later snapshot:
+
+- `ferriso-gui` calls `Renderer::on_snapshot_task` for the snapshot read at
+  window boot and for every snapshot delivered by the actor. The default
+  implementation forwards to `on_snapshot` and returns `Task::none()`, so
+  bookkeeping hooks keep working. Override it when snapshot handling must focus
+  a widget or schedule renderer-local work.
+- `ferriso-tui` calls `Renderer::on_snapshot` once before the first draw and
+  then whenever the actor publishes a different snapshot. Cache invalidation
+  and notification diffing belong there instead of being duplicated in
+  `draw` and `handle`.
+- `ferriso-gpui` calls `Renderer::on_snapshot` for the boot snapshot.
+- `ferriso-floem` calls `Renderer::on_snapshot` while constructing the initial
+  signal value and for later values.
+
 ## Running a frontend
 
 ```rust
 // Convenience: the adapter owns a private runtime, actor, and terminal/window.
 ferriso_tui::run(Player::new(), PlayerTui::new(), Options::default())?;
 ferriso_gui::run(Player::new(), PlayerGui::new(), Settings::default())?;
+
+// Caller-owned diagnostics are available to both adapter paths.
+let diagnostics = ferriso_core::Diagnostics::new().with_debug(true);
+ferriso_tui::run_with_app_diagnostics(
+    || Player::new(),
+    PlayerTui::new(),
+    Options::default(),
+    diagnostics.clone(),
+)?;
 
 // When construction needs a reactor (HTTP clients, audio devices, tokio::spawn),
 // build the app inside the adapter's runtime instead.
@@ -135,6 +161,9 @@ Runtime boundary capture:
   are wrapped with `catch_unwind` and phase/task context. A panic stops the
   actor instead of continuing on inconsistent state; startup panics are logged
   and re-raised.
+- These boundaries require Rust's default `panic = "unwind"`. A consumer
+  release profile that sets `panic = "abort"` bypasses the diagnostics record
+  and aborts the process; do that only when the panic report is expendable.
 - Command futures are wrapped per future. A panicking command is recorded as
   `ferriso::command::panic`, its result is dropped, and the actor keeps running.
 
@@ -174,6 +203,9 @@ environment are namespaced independently:
 The loader reports every candidate layer (path and present/missing state) for
 diagnostics; values are never copied into a report. Missing optional layers are
 skipped; a missing explicit layer or an unknown key fails with a code and a fix.
+Use `Loader::load_with_sources` when the application reports provenance: it
+returns the typed value and the exact source list from one load instead of
+requiring a separate `sources()` call.
 
 Sources are merged lowest to highest:
 

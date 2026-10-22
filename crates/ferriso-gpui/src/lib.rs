@@ -161,6 +161,9 @@ pub fn run_with<V, M, R>(
     R: Renderer<V, M>,
 {
     let initial = snapshots.current();
+    let mut renderer = renderer;
+    renderer.on_snapshot(&initial);
+
     let (mut receiver, relay) = relay_snapshots(snapshots);
     let ui = Ui { handle };
     let mut renderer = Some(renderer);

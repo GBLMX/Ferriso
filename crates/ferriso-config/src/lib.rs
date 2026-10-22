@@ -156,6 +156,18 @@ impl Loader {
 
     /// Read every layer and deserialize the merged result.
     pub fn load<T: DeserializeOwned>(self) -> Result<T, ConfigError> {
+        self.load_with_sources().map(|(config, _sources)| config)
+    }
+
+    /// Read every layer, deserialize it, and return the source list used.
+    ///
+    /// The source list is captured before deserialization and contains paths
+    /// and existence flags only. Applications that report configuration
+    /// provenance in diagnostics should use this instead of calling
+    /// [`Loader::sources`] and [`Loader::load`] separately.
+    pub fn load_with_sources<T: DeserializeOwned>(
+        self,
+    ) -> Result<(T, Vec<SourceInfo>), ConfigError> {
         let sources = self.sources();
         let env_var = format!("{}_CONFIG", self.env_prefix);
 
@@ -171,20 +183,22 @@ impl Loader {
         let config = self
             .build()
             .map_err(|source| invalid_configuration(source, &sources))?;
-        config
+        let config = config
             .try_deserialize()
-            .map_err(|source| invalid_configuration(source, &sources))
+            .map_err(|source| invalid_configuration(source, &sources))?;
+        Ok((config, sources))
     }
 
     /// Every candidate layer, its precedence position, and whether it exists.
     ///
     /// This is safe to include in diagnostics: paths only, never file contents.
     pub fn sources(&self) -> Vec<SourceInfo> {
+        let system = system_file(&self.app);
         let mut sources = vec![SourceInfo {
             label: "system",
-            path: system_file(&self.app),
+            path: system.clone(),
             required: false,
-            exists: system_file(&self.app).is_file(),
+            exists: system.is_file(),
         }];
 
         if let Some(user) = user_file(&self.app) {
@@ -411,16 +425,21 @@ mod tests {
             "[gui]\nwidth = 300.0\n[player]\nvolume = 0.25\n",
         );
 
-        let config: Fixture = Loader::new("ferriso-config-precedence")
+        let (config, sources): (Fixture, _) = Loader::new("ferriso-config-precedence")
             .local(Some(local))
             .explicit(&explicit)
-            .load()
+            .load_with_sources()
             .expect("load layers");
 
         assert_eq!(config.gui.width, 300.0);
         assert_eq!(config.gui.title, "local");
         assert_eq!(config.player.volume, 0.25);
         assert_eq!(config.player.tick_ms, 0);
+        assert!(
+            sources
+                .iter()
+                .any(|source| source.label == "explicit" && source.exists)
+        );
     }
 
     #[test]
