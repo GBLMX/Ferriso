@@ -12,9 +12,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: System libraries for iced and clipboard
+      - name: System libraries for iced, GPUI, and clipboard
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev libx11-dev
+          sudo apt-get install -y pkg-config libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-dev
       - name: Compatibility smoke
         run: ./scripts/compat-check.sh
