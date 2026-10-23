@@ -5,11 +5,11 @@
 //! presentation code, not a lowest-common-denominator layout IR.
 
 use ferriso_gui::iced::{
-    self, Alignment, Background, Border, Color, Element, Length, Theme,
-    keyboard::{self, Key, key::Named},
+    self, Alignment, Background, Border, Color, Element, Length, Theme, keyboard,
     widget::{Space, button, column, container, row, scrollable, slider, text, text_input},
 };
 use ferriso_gui::{Message as GuiMessage, Renderer};
+use ferriso_keymap::Keymap;
 
 use crate::app::{LoginView, Message, Page, ViewModel, format_duration};
 
@@ -26,11 +26,36 @@ const ERROR: Color = Color::from_rgb8(247, 118, 142);
 const WARNING: Color = Color::from_rgb8(224, 175, 104);
 const HIGHLIGHT: Color = Color::from_rgb8(34, 46, 64);
 
-pub struct PlayerGui;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Shortcut {
+    PlayPause,
+    Previous,
+    Next,
+    CycleMode,
+    ToggleLike,
+    Close,
+}
+
+pub struct PlayerGui {
+    keymap: Keymap<Shortcut>,
+}
 
 impl PlayerGui {
     pub fn new() -> Self {
-        Self
+        let mut keymap = Keymap::new();
+        for (binding, shortcut) in [
+            ("Ctrl+Space", Shortcut::PlayPause),
+            ("Ctrl+ArrowLeft", Shortcut::Previous),
+            ("Ctrl+ArrowRight", Shortcut::Next),
+            ("Ctrl+m", Shortcut::CycleMode),
+            ("Ctrl+l", Shortcut::ToggleLike),
+            ("Ctrl+q", Shortcut::Close),
+        ] {
+            keymap
+                .bind_str(binding, shortcut)
+                .expect("static player binding is valid");
+        }
+        Self { keymap }
     }
 }
 
@@ -61,27 +86,22 @@ impl Renderer<ViewModel, Message> for PlayerGui {
     }
 
     fn subscription(&self, _view: &ViewModel) -> iced::Subscription<Msg> {
-        keyboard::listen().filter_map(|event| {
-            let keyboard::Event::KeyPressed { key, modifiers, .. } = event else {
-                return None;
-            };
-            if !modifiers.control() {
-                return None;
-            }
-            match key {
-                Key::Named(Named::Space) => Some(GuiMessage::User(Message::PlayPause)),
-                Key::Named(Named::ArrowLeft) => Some(GuiMessage::User(Message::Previous)),
-                Key::Named(Named::ArrowRight) => Some(GuiMessage::User(Message::Next)),
-                Key::Character(character) if character.as_str() == "m" => {
-                    Some(GuiMessage::User(Message::CycleMode))
+        keyboard::listen()
+            .with(self.keymap.clone())
+            .filter_map(|(keymap, event)| {
+                let keyboard::Event::KeyPressed { key, modifiers, .. } = event else {
+                    return None;
+                };
+                let chord = ferriso_gui::keymap::chord(&key, modifiers)?;
+                match keymap.resolve(&chord).copied()? {
+                    Shortcut::PlayPause => Some(GuiMessage::User(Message::PlayPause)),
+                    Shortcut::Previous => Some(GuiMessage::User(Message::Previous)),
+                    Shortcut::Next => Some(GuiMessage::User(Message::Next)),
+                    Shortcut::CycleMode => Some(GuiMessage::User(Message::CycleMode)),
+                    Shortcut::ToggleLike => Some(GuiMessage::User(Message::ToggleLike)),
+                    Shortcut::Close => Some(GuiMessage::Closed),
                 }
-                Key::Character(character) if character.as_str() == "l" => {
-                    Some(GuiMessage::User(Message::ToggleLike))
-                }
-                Key::Character(character) if character.as_str() == "q" => Some(GuiMessage::Closed),
-                _ => None,
-            }
-        })
+            })
     }
 }
 
@@ -636,5 +656,29 @@ fn primary_style(_theme: &Theme, status: button::Status) -> button::Style {
             ..Default::default()
         },
         ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ferriso_keymap::Chord;
+
+    use super::*;
+
+    #[test]
+    fn player_shortcuts_are_ctrl_chords() {
+        let gui = PlayerGui::new();
+        let resolve = |binding: &str| {
+            gui.keymap
+                .resolve(&Chord::parse(binding).expect("test chord"))
+                .copied()
+        };
+
+        assert_eq!(resolve("Ctrl+Space"), Some(Shortcut::PlayPause));
+        assert_eq!(resolve("Ctrl+ArrowLeft"), Some(Shortcut::Previous));
+        assert_eq!(resolve("Ctrl+m"), Some(Shortcut::CycleMode));
+        assert_eq!(resolve("Ctrl+q"), Some(Shortcut::Close));
+        assert_eq!(resolve("m"), None);
+        assert_eq!(resolve("Ctrl+Shift+m"), None);
     }
 }

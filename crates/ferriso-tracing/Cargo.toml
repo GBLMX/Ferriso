@@ -1,0 +1,15 @@
+[package]
+name = "ferriso-tracing"
+description = "tracing backend for Ferriso diagnostics."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ferriso-diagnostics = { workspace = true }
+tracing = "0.1"
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }

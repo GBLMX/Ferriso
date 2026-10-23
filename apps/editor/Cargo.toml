@@ -1,0 +1,23 @@
+[package]
+name = "ferriso-editor-app"
+description = "Ferriso editor: one actor-owned model with native iced and ratatui frontends over ferriso-editor."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ferriso-core = { workspace = true }
+ferriso-editor = { workspace = true }
+ferriso-gui = { workspace = true }
+ferriso-platform = { workspace = true, features = ["clipboard", "dialogs"] }
+ferriso-tui = { workspace = true }
+
+[[bin]]
+name = "ferriso-editor"
+path = "src/main.rs"
+
+[[bin]]
+name = "ferriso-editor-tui"
+path = "src/main_tui.rs"

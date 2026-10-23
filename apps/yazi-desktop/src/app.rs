@@ -2,8 +2,8 @@
 //!
 //! A file manager that reads the filesystem asynchronously, keeps navigation
 //! history, filters the current listing, and previews the selection. All state
-//! lives behind the Ferriso actor; the iced window only renders snapshots and
-//! sends [`Message`]s.
+//! lives behind the Ferriso actor; the iced and terminal frontends only render
+//! snapshots and send [`Message`]s.
 
 use std::{
     env, fs,
@@ -17,6 +17,7 @@ use std::{
 };
 
 use ferriso_core::{App, Command};
+use ferriso_platform::{Opener, SystemOpener};
 use tokio::sync::Semaphore;
 
 use crate::preview::{CacheKey, PreviewCache, PreviewImage, decode_image};
@@ -678,42 +679,14 @@ impl App for Yazi {
 fn open_external(path: PathBuf) -> Command<Message> {
     Command::perform(
         async move {
-            let result = tokio::task::spawn_blocking(move || launch(&path))
+            let result = tokio::task::spawn_blocking(move || SystemOpener::new().open(&path))
                 .await
                 .map_err(|error| error.to_string())
-                .and_then(|result| result);
+                .and_then(|result| result.map_err(|error| error.to_string()));
             Message::Opened(result)
         },
         |message| message,
     )
-}
-
-#[cfg(target_os = "linux")]
-fn launch(path: &Path) -> Result<(), String> {
-    std::process::Command::new("xdg-open")
-        .arg(path)
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| format!("xdg-open failed: {error}"))
-}
-
-#[cfg(target_os = "macos")]
-fn launch(path: &Path) -> Result<(), String> {
-    std::process::Command::new("open")
-        .arg(path)
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| format!("open failed: {error}"))
-}
-
-#[cfg(target_os = "windows")]
-fn launch(path: &Path) -> Result<(), String> {
-    std::process::Command::new("cmd")
-        .args(["/C", "start", ""])
-        .arg(path)
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| format!("start failed: {error}"))
 }
 
 /// Read one directory into a sorted, filtered listing.

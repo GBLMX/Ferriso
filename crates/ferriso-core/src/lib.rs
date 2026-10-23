@@ -1,26 +1,35 @@
 //! The headless half of Ferriso.
 //!
 //! `ferriso-core` owns the application state in a Tokio actor, schedules async
-//! commands and ticks, accepts frontend-neutral messages, and publishes
-//! immutable view snapshots. It depends only on Tokio.
+//! commands, reconciles keyed subscription streams, exposes an optional
+//! deprecated tick timer,
+//! cooperative cancellation, accepts frontend-neutral messages, and publishes
+//! immutable view snapshots. Its dependencies are Tokio, futures, and
+//! `ferriso-diagnostics`.
 //!
 //! Adapters (`ferriso-tui`, `ferriso-gui`) never call [`App::update`]; they send
 //! messages and render snapshots with their own native layout.
 
 mod app;
+mod cancellation;
 mod command;
 mod runtime;
+mod subscription;
 
 pub use app::App;
+pub use cancellation::CancellationToken;
 pub use command::Command;
 pub use ferriso_diagnostics::{Diagnostics, EventKind, FrameworkError, TaskId};
 pub use runtime::{
-    CoreEvent, CoreHandle, CoreTask, Snapshots, spawn, spawn_with_debug, spawn_with_diagnostics,
+    CoreEvent, CoreHandle, CoreTask, RuntimeOptions, Snapshots, spawn, spawn_with_debug,
+    spawn_with_diagnostics, spawn_with_diagnostics_and_options, spawn_with_options,
 };
+pub use subscription::Subscription;
 
 /// Small prelude for application crates.
 pub mod prelude {
     pub use crate::{
-        App, Command, CoreHandle, Diagnostics, Snapshots, spawn, spawn_with_diagnostics,
+        App, CancellationToken, Command, CoreHandle, Diagnostics, RuntimeOptions, Snapshots,
+        Subscription, spawn, spawn_with_diagnostics, spawn_with_options,
     };
 }

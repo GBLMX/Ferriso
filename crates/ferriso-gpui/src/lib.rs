@@ -11,7 +11,7 @@
 use std::{sync::Arc, time::Duration};
 
 use ferriso_core::{App, CoreHandle, Snapshots};
-use futures::{FutureExt, StreamExt, channel::mpsc};
+use futures::{FutureExt, SinkExt, StreamExt, channel::mpsc};
 use gpui::{
     AnyElement, App as GpuiApp, AppContext, Application, Bounds, Context, Render, Task,
     TitlebarOptions, Window, WindowBounds, WindowOptions, px, size,
@@ -261,21 +261,24 @@ impl Drop for Relay {
     }
 }
 
-fn relay_snapshots<V>(mut snapshots: Snapshots<V>) -> (mpsc::UnboundedReceiver<Bridge<V>>, Relay)
+fn relay_snapshots<V>(mut snapshots: Snapshots<V>) -> (mpsc::Receiver<Bridge<V>>, Relay)
 where
     V: Send + Sync + 'static,
 {
-    let (tx, rx) = mpsc::unbounded();
+    // Capacity one is intentional: the snapshot watch already keeps the newest
+    // value, so a slow window should backpressure the relay instead of queueing
+    // every intermediate view and cloning it again when it is finally painted.
+    let (mut tx, rx) = mpsc::channel(1);
     let (stop_tx, stop_rx) = futures::channel::oneshot::channel::<()>();
     let thread = std::thread::spawn(move || {
         futures::executor::block_on(async move {
             let relay = async move {
                 while let Ok(view) = snapshots.changed().await {
-                    if tx.unbounded_send(Bridge::View(view)).is_err() {
+                    if tx.send(Bridge::View(view)).await.is_err() {
                         return false;
                     }
                 }
-                let _ = tx.unbounded_send(Bridge::Closed);
+                let _ = tx.send(Bridge::Closed).await;
                 true
             }
             .fuse();

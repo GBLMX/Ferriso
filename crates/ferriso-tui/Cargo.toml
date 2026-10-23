@@ -9,6 +9,8 @@ repository.workspace = true
 
 [dependencies]
 ferriso-core = { workspace = true }
-crossterm = "0.29"
+ferriso-keymap = { workspace = true }
+crossterm = { version = "0.29", features = ["event-stream"] }
+futures = "0.3"
 ratatui = { version = "0.30", default-features = false, features = ["crossterm_0_29"] }
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }

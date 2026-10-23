@@ -84,7 +84,10 @@ impl PlayerConfig {
 pub struct TuiConfig {
     /// Capture mouse events.
     pub mouse: bool,
-    /// Maximum block time while waiting for a terminal event, in milliseconds.
+    /// Retained for configuration compatibility.
+    ///
+    /// The built-in terminal loop is event-driven, so this value no longer
+    /// controls latency; it is still validated and passed to [`Options`].
     pub poll_ms: u64,
 }
 
@@ -140,6 +143,7 @@ impl GuiConfig {
             title: self.title.clone(),
             size: (self.width, self.height),
             application_id: ferriso_gui::APPLICATION_ID.into(),
+            ..ferriso_gui::Settings::default()
         }
     }
 

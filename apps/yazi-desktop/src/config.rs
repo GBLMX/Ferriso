@@ -99,6 +99,7 @@ impl Config {
             title: self.window.title.clone(),
             size: (self.window.width, self.window.height),
             application_id: APPLICATION_ID.into(),
+            ..ferriso_gui::Settings::default()
         }
     }
 }

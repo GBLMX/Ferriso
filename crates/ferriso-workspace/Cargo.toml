@@ -1,0 +1,10 @@
+[package]
+name = "ferriso-workspace"
+description = "Frontend-neutral tabs, split panes, and virtualized table viewport models for Ferriso."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

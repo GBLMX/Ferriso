@@ -27,6 +27,7 @@ pub enum EventKind {
     Tick,
     Command,
     CommandResult,
+    Subscription,
     Snapshot,
     Error,
     Custom,
@@ -40,6 +41,7 @@ impl EventKind {
             Self::Tick => "tick",
             Self::Command => "command",
             Self::CommandResult => "command-result",
+            Self::Subscription => "subscription",
             Self::Snapshot => "snapshot",
             Self::Error => "error",
             Self::Custom => "event",
@@ -612,7 +614,7 @@ mod tests {
 
         let meta = ReportMeta {
             application: "fixture",
-            version: "0.1.0",
+            version: env!("CARGO_PKG_VERSION"),
             config: "[debug]\nenabled = true",
             environment: &[("os".into(), "linux".into())],
         };
@@ -637,7 +639,7 @@ mod tests {
         let diagnostics = Diagnostics::new();
         let meta = ReportMeta {
             application: "fixture",
-            version: "0.1.0",
+            version: env!("CARGO_PKG_VERSION"),
             config: "",
             environment: &[],
         };

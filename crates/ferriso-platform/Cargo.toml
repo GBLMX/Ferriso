@@ -1,0 +1,26 @@
+[package]
+name = "ferriso-platform"
+description = "Native platform services for Ferriso applications."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["clipboard", "dialogs", "notifications", "watch"]
+clipboard = ["dep:arboard"]
+dialogs = ["dep:rfd"]
+notifications = ["dep:notify-rust"]
+watch = ["dep:futures-core", "dep:notify", "dep:tokio"]
+
+[dependencies]
+arboard = { version = "3", optional = true }
+futures-core = { version = "0.3", optional = true }
+notify = { version = "8", optional = true }
+notify-rust = { version = "4", optional = true }
+rfd = { version = "0.15", optional = true }
+tokio = { version = "1", features = ["sync"], optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "time"] }

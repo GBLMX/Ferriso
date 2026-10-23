@@ -1,0 +1,16 @@
+[package]
+name = "ferriso-test"
+description = "Headless test harness for Ferriso actors."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ferriso-core = { workspace = true }
+
+[dev-dependencies]
+ferriso-gui = { workspace = true }
+ferriso-tui = { workspace = true }
+tokio = { version = "1", features = ["macros", "rt", "time"] }

@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use ferriso_core::{App, Command};
+use ferriso_core::{App, Command, Subscription};
 
 use crate::config::PlayerConfig;
 
@@ -97,6 +97,7 @@ pub enum Message {
     LoggedIn,
     Logout,
     OfferLoginQr,
+    Tick,
 }
 
 pub struct Player {
@@ -469,6 +470,7 @@ impl App for Player {
                 }
                 return self.load_songs();
             }
+            Message::Tick => self.advance(),
             Message::SongsLoaded(songs) => {
                 self.loading = false;
                 self.discover = songs;
@@ -595,13 +597,8 @@ impl App for Player {
         self.view_model()
     }
 
-    fn tick_interval(&self) -> Option<Duration> {
-        Some(self.tick)
-    }
-
-    fn tick(&mut self) -> Command<Message> {
-        self.advance();
-        Command::none()
+    fn subscriptions(&self) -> Subscription<Message> {
+        Subscription::interval(1, self.tick, Message::Tick)
     }
 }
 
@@ -752,7 +749,7 @@ mod tests {
         assert!(view.songs[0].playing);
         assert_eq!(view.selected, Some(0));
 
-        player.tick();
+        player.update(Message::Tick);
         let view = player.view();
         assert!((view.player.position - player.tick.as_secs_f64()).abs() < f64::EPSILON);
         assert!(view.lyrics.len() > 1);
@@ -765,7 +762,7 @@ mod tests {
             tick_ms: 250,
         });
         player.update(Message::Play(Page::Discover, 0));
-        player.tick();
+        player.update(Message::Tick);
 
         let view = player.view();
         assert_eq!(view.player.volume, 0.25);

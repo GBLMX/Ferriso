@@ -1,0 +1,19 @@
+[package]
+name = "ferriso-twozero48"
+description = "A small 2048 GUI built on the Ferriso core and iced adapter."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ferriso-core = { workspace = true }
+ferriso-gui = { workspace = true }
+ferriso-keymap = { workspace = true }
+rand = "0.10"
+twozero48 = "1.1"
+
+[[bin]]
+name = "twozero48-gui"
+path = "src/main_gui.rs"

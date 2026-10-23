@@ -1,0 +1,10 @@
+[package]
+name = "ferriso-keymap"
+description = "Frontend-neutral key chords and shortcut maps for Ferriso."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

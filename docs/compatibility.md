@@ -1,0 +1,96 @@
+# Compatibility matrix
+
+The contract standard is **one application backend, both TUI and iced pass**.
+Compilation plus the core interaction path is the bar; feature parity is not.
+
+## Current status
+
+| Application | Core actor | TUI | iced | Core path exercised |
+| --- | --- | --- | --- | --- |
+| `apps/player` | ✅ | ✅ | ✅ | TUI launches and quits with `Ctrl+Q`; iced builds against the same `Player` view model. |
+| `apps/editor` | ✅ | ✅ | ✅ | TUI draws a `TestBackend` snapshot, opens a file, inserts text, saves, and quits; iced launches with a live snapshot and close-request interception. |
+| `apps/yazi-desktop` | ✅ | ✅ | ✅ | TUI draws the shared `ViewModel`, navigates, filters, and previews; iced file-manager path builds and opens the layered config. |
+| `boxpigma` (external `pigma` repo) | ✅ | ✅ | ✅ | TUI and iced binaries compile; TUI starts, renders, and quits. It pins Ferriso `e021c99` (0.1.x), not workspace HEAD; see [`versioning.md`](versioning.md). |
+
+`—` means the frontend has not been attached. It is not a claim that the
+application cannot be attached.
+
+GPUI and Floem remain boundary probes. They are deliberately outside the P0
+matrix until the TUI + iced path stays clean across every application.
+`apps/twozero48` is a GUI-only downstream probe and is also outside the
+two-frontend matrix.
+
+## What "pass" means
+
+1. `cargo test --workspace` passes.
+2. The application constructs an actor-backed `App`; the frontend never calls
+   `App::update` or owns domain state.
+3. TUI: the binary enters the alternate screen, renders a snapshot, accepts a
+   semantic edit or navigation key, and exits without panicking.
+4. iced: the binary launches, renders the boot snapshot, and exits cleanly when
+   the window closes. Headless CI compiles this path; the live-window check is
+   run on a desktop runner.
+5. Configuration is loaded outside the core and passed into the application
+   constructor. The core keeps its Tokio/diagnostics dependency boundary.
+
+## Reproduce
+
+```bash
+./scripts/compat-check.sh
+```
+
+Individual paths:
+
+```bash
+# Contract and adapters
+cargo test -p ferriso-core -p ferriso-config -p ferriso-tui -p ferriso-gui -p ferriso-workspace
+
+# Native service feature matrix
+cargo test -p ferriso-platform
+cargo test -p ferriso-platform --no-default-features
+
+# Player, both frontends
+cargo test -p ferriso-player
+cargo run -p ferriso-player --bin ferriso-player-tui
+cargo run -p ferriso-player --bin ferriso-player-gui
+
+# yazi-desktop, both frontends
+cargo test -p ferriso-yazi-desktop
+cargo run -p ferriso-yazi-desktop --bin yazi-desktop-tui
+cargo run -p ferriso-yazi-desktop
+
+# Editor, both frontends
+cargo test -p ferriso-editor-app
+cargo run -p ferriso-editor-app --bin ferriso-editor-tui -- README.md
+cargo run -p ferriso-editor-app --bin ferriso-editor -- README.md
+```
+
+`scripts/compat-check.sh` runs the headless part of this list plus formatting,
+the dependency-boundary checks in `scripts/architecture-check.sh`, clippy with
+warnings denied, and the full workspace test suite. The GitHub workflow
+`.github/workflows/compatibility.yml` runs the same script.
+
+`boxpigma` is not a workspace member because it is a downstream consumer. It
+pins `e021c99` (the 0.1 contract), so this check does not validate workspace
+HEAD. To check it against its pinned revision:
+
+```bash
+cd ../pigma
+cargo check --bins
+cargo run --bin boxpigma
+```
+
+Its GUI binary is `boxpigma-gui`; the terminal binary is `boxpigma`. The smoke
+check used here started the TUI, observed a rendered frame, and quit with `q`.
+
+## Adapter translation budget
+
+Translation code means key/event mapping, layout, rendering, relay, and
+runtime/window startup. Domain state, search state, tab state, and save policy
+must stay in the application or kernel.
+
+The editor is the largest adapter surface: a real text editor needs a canvas
+and a terminal renderer. Its TUI adapter is kept to input translation and cell
+drawing; tabs, search matches, dirty state, and save prompts live in
+`EditorModel`. If a future change pushes editor behavior into `app.rs` or
+`tui.rs`, fix the kernel/contract boundary before adding another special case.

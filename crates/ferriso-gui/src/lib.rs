@@ -13,6 +13,9 @@ use std::{
 };
 
 pub mod art;
+pub mod design;
+pub mod interaction;
+pub mod keymap;
 
 use ferriso_core::{App, CoreHandle, Diagnostics, Snapshots};
 use futures::{Stream, stream};
@@ -97,12 +100,24 @@ pub trait Renderer<V, M, L = ()> {
     fn theme(&self, _view: &V) -> Theme {
         Theme::Dark
     }
+
+    /// The window title for this snapshot.
+    ///
+    /// Returning `None` keeps [`Settings::title`].
+    fn title(&self, _view: &V) -> Option<String> {
+        None
+    }
 }
 
 /// Window settings supplied by the adapter caller, not by the core.
 pub struct Settings {
     pub title: String,
     pub size: (f32, f32),
+    /// Whether the window manager may close the window directly.
+    ///
+    /// Set this to `false` when the renderer needs to intercept close
+    /// requests, for example to prompt about unsaved work.
+    pub exit_on_close_request: bool,
     /// Desktop application identity.
     ///
     /// On Wayland this is `xdg_toplevel.set_app_id`; on X11 it is `WM_CLASS`.
@@ -115,6 +130,7 @@ impl Default for Settings {
         Self {
             title: "Ferriso".into(),
             size: (1100.0, 760.0),
+            exit_on_close_request: true,
             application_id: APPLICATION_ID.into(),
         }
     }
@@ -124,6 +140,7 @@ struct Frontend<V, M, L, R> {
     view: Arc<V>,
     handle: CoreHandle<M>,
     renderer: R,
+    fallback_title: String,
     _local: PhantomData<L>,
 }
 
@@ -131,11 +148,17 @@ impl<V, M, L, R> Frontend<V, M, L, R>
 where
     R: Renderer<V, M, L>,
 {
-    fn new(view: Arc<V>, handle: CoreHandle<M>, renderer: R) -> (Self, Task<Message<V, M, L>>) {
+    fn new(
+        view: Arc<V>,
+        handle: CoreHandle<M>,
+        renderer: R,
+        fallback_title: String,
+    ) -> (Self, Task<Message<V, M, L>>) {
         let mut frontend = Self {
             view,
             handle,
             renderer,
+            fallback_title,
             _local: PhantomData,
         };
         let task = frontend.renderer.on_snapshot_task(&frontend.view);
@@ -251,6 +274,7 @@ where
     let title = settings.title;
     let size = settings.size;
     let application_id = settings.application_id;
+    let exit_on_close_request = settings.exit_on_close_request;
     let subscription_snapshots = snapshots.clone();
 
     iced::application(
@@ -260,12 +284,18 @@ where
                 .expect("boot lock poisoned")
                 .take()
                 .expect("iced booted more than once");
-            Frontend::new(view, handle, renderer)
+            let fallback_title = title.clone();
+            Frontend::new(view, handle, renderer, fallback_title)
         },
         update::<A, L, R>,
         view::<A, L, R>,
     )
-    .title(move |_: &Frontend<A::View, A::Message, L, R>| title.clone())
+    .title(|frontend: &Frontend<A::View, A::Message, L, R>| {
+        frontend
+            .renderer
+            .title(&frontend.view)
+            .unwrap_or_else(|| frontend.fallback_title.clone())
+    })
     .subscription(move |frontend: &Frontend<A::View, A::Message, L, R>| {
         Subscription::batch([
             subscription(subscription_snapshots.clone()),
@@ -273,14 +303,23 @@ where
         ])
     })
     .theme(|frontend: &Frontend<A::View, A::Message, L, R>| frontend.renderer.theme(&frontend.view))
-    .window(window_settings(size, &application_id))
+    .window(window_settings(
+        size,
+        &application_id,
+        exit_on_close_request,
+    ))
     .run()
 }
 
 /// Window settings shared by every launch path.
-fn window_settings(size: (f32, f32), application_id: &str) -> iced::window::Settings {
+fn window_settings(
+    size: (f32, f32),
+    application_id: &str,
+    exit_on_close_request: bool,
+) -> iced::window::Settings {
     iced::window::Settings {
         size: iced::Size::new(size.0, size.1),
+        exit_on_close_request,
         #[cfg(target_os = "linux")]
         platform_specific: iced::window::settings::PlatformSpecific {
             application_id: application_id.to_owned(),
@@ -375,7 +414,7 @@ mod tests {
 
     #[test]
     fn window_settings_apply_the_requested_size() {
-        let settings = window_settings((900.0, 600.0), APPLICATION_ID);
+        let settings = window_settings((900.0, 600.0), APPLICATION_ID, true);
         assert_eq!(settings.size.width, 900.0);
         assert_eq!(settings.size.height, 600.0);
     }
@@ -383,7 +422,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn window_settings_expose_a_stable_application_id() {
-        let settings = window_settings((900.0, 600.0), APPLICATION_ID);
+        let settings = window_settings((900.0, 600.0), APPLICATION_ID, true);
         assert_eq!(settings.platform_specific.application_id, APPLICATION_ID);
     }
 
@@ -430,8 +469,12 @@ mod tests {
         let (handle, _snapshots, task) = ferriso_core::spawn(Idle);
         let shutdown = handle.clone();
 
-        let (mut frontend, _boot) =
-            Frontend::<u32, u32, (), Hooked>::new(Arc::new(0), handle, Hooked::default());
+        let (mut frontend, _boot) = Frontend::<u32, u32, (), Hooked>::new(
+            Arc::new(0),
+            handle,
+            Hooked::default(),
+            "test".into(),
+        );
         let _later = frontend.apply_snapshot(Arc::new(1));
 
         assert_eq!(frontend.renderer.seen, vec![0, 1]);

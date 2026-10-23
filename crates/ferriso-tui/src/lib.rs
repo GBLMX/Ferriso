@@ -4,6 +4,10 @@
 //! runtime that hosts the core actor. Applications own their terminal-local
 //! state (focus, scroll offsets, an in-progress text edit) inside a
 //! [`Renderer`] and send semantic messages; they never touch core state.
+//!
+//! The adapter reserves no quit chord. `Ctrl+Q` and `Ctrl+C` reach the
+//! renderer, so an application can run its save guard or use `Ctrl+C` for
+//! copy; return [`Outcome::Quit`] when the application decides to leave.
 
 use std::{
     io::{self, stdout},
@@ -11,11 +15,12 @@ use std::{
     time::Duration,
 };
 
-use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers,
-};
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream};
 use ferriso_core::{App, Diagnostics, Snapshots};
+use futures::{StreamExt, stream};
 use ratatui::Frame;
+
+pub mod keymap;
 
 pub use crossterm;
 pub use ratatui;
@@ -45,13 +50,27 @@ pub trait Renderer<V, M> {
     /// notification diffing, and other bookkeeping; it replaces doing the same
     /// work in both [`Renderer::draw`] and [`Renderer::handle`].
     fn on_snapshot(&mut self, _view: &V) {}
+
+    /// Optional message to send after a snapshot changed the viewport.
+    ///
+    /// The terminal adapter has no return value from [`Renderer::draw`], so
+    /// layouts whose height depends on snapshot state (an open search bar, for
+    /// example) use this hook to publish a new [`crate::Renderer`] viewport.
+    /// Return `None` when nothing changed; returning a message on every
+    /// snapshot creates a feedback loop.
+    fn on_snapshot_message(&mut self, _view: &V) -> Option<M> {
+        None
+    }
 }
 
 /// Adapter options.
 pub struct Options {
     /// Capture mouse events. Keyboard-only applications can leave this off.
     pub mouse: bool,
-    /// Maximum time to block waiting for a terminal event.
+    /// Reserved for adapters that poll for input.
+    ///
+    /// The built-in loop waits on crossterm's event stream, so snapshots and
+    /// keys wake it immediately instead of waiting for this interval.
     pub poll_interval: Duration,
 }
 
@@ -137,18 +156,25 @@ where
     A: App,
     R: Renderer<A::View, A::Message>,
 {
-    let mut terminal = ratatui::init();
-    if options.mouse {
-        crossterm::execute!(stdout(), EnableMouseCapture)?;
+    let mut terminal = ratatui::try_init()?;
+    if options.mouse
+        && let Err(error) = crossterm::execute!(stdout(), EnableMouseCapture)
+    {
+        let _ = ratatui::try_restore();
+        return Err(error);
     }
 
-    let result = event_loop::<A, R>(&mut terminal, renderer, &handle, &snapshots, &options);
+    let result = event_loop::<A, R>(&mut terminal, renderer, &handle, &snapshots);
 
     if options.mouse {
         let _ = crossterm::execute!(stdout(), DisableMouseCapture);
     }
-    ratatui::restore();
-    result
+    let restore = ratatui::try_restore();
+    match (result, restore) {
+        (Err(error), _) => Err(error),
+        (Ok(()), Err(error)) => Err(error),
+        (Ok(()), Ok(())) => Ok(()),
+    }
 }
 
 fn event_loop<A, R>(
@@ -156,45 +182,90 @@ fn event_loop<A, R>(
     mut renderer: R,
     handle: &ferriso_core::CoreHandle<A::Message>,
     snapshots: &ferriso_core::Snapshots<A::View>,
-    options: &Options,
 ) -> io::Result<()>
 where
     A: App,
     R: Renderer<A::View, A::Message>,
 {
+    enum LoopEvent<V> {
+        Terminal(io::Result<Event>),
+        Snapshot(Arc<V>),
+        Closed,
+    }
+
     let mut view = boot_snapshot(snapshots, &mut renderer);
+    if let Some(message) = renderer.on_snapshot_message(&view)
+        && !handle.send(message)
+    {
+        return Ok(());
+    }
     terminal.draw(|frame| renderer.draw(&view, frame))?;
 
-    loop {
-        if snapshots.closed() {
-            break;
-        }
-
-        let mut dirty = sync_snapshot(&mut view, snapshots, &mut renderer);
-
-        if event::poll(options.poll_interval)? {
-            let terminal_event = event::read()?;
-            if quit_shortcut(&terminal_event) {
-                break;
+    let terminal_events = EventStream::new().map(LoopEvent::Terminal);
+    let snapshot_events = stream::unfold(
+        (snapshots.clone(), false),
+        |(mut snapshots, done)| async move {
+            if done {
+                return None;
             }
-            dirty = true;
-            match renderer.handle(&view, terminal_event) {
-                Outcome::Ignored => {}
-                Outcome::Message(message) => {
-                    if !handle.send(message) {
-                        break;
+            match snapshots.changed().await {
+                Ok(view) => Some((LoopEvent::Snapshot(view), (snapshots, false))),
+                Err(_) => Some((LoopEvent::Closed, (snapshots, true))),
+            }
+        },
+    );
+    let events = stream::select(terminal_events, snapshot_events);
+    futures::pin_mut!(events);
+
+    // One `block_on` for the whole loop. Re-entering the executor per event
+    // would give crossterm's event-stream waker a different task each time,
+    // and a stale wake could then leave the loop asleep.
+    futures::executor::block_on(async {
+        while let Some(event) = events.next().await {
+            let dirty = match event {
+                LoopEvent::Terminal(Ok(terminal_event)) => {
+                    match renderer.handle(&view, terminal_event) {
+                        Outcome::Ignored => true,
+                        Outcome::Message(message) => {
+                            if !handle.send(message) {
+                                break;
+                            }
+                            true
+                        }
+                        Outcome::Quit => break,
                     }
                 }
-                Outcome::Quit => break,
+                LoopEvent::Terminal(Err(error)) => return Err(error),
+                LoopEvent::Snapshot(latest) => {
+                    if Arc::ptr_eq(&view, &latest) {
+                        false
+                    } else {
+                        view = latest;
+                        renderer.on_snapshot(&view);
+                        if let Some(message) = renderer.on_snapshot_message(&view)
+                            && !handle.send(message)
+                        {
+                            break;
+                        }
+                        true
+                    }
+                }
+                LoopEvent::Closed => break,
+            };
+
+            if dirty {
+                let changed = sync_snapshot(&mut view, snapshots, &mut renderer);
+                if changed
+                    && let Some(message) = renderer.on_snapshot_message(&view)
+                    && !handle.send(message)
+                {
+                    break;
+                }
+                terminal.draw(|frame| renderer.draw(&view, frame))?;
             }
         }
-
-        if dirty {
-            sync_snapshot(&mut view, snapshots, &mut renderer);
-            terminal.draw(|frame| renderer.draw(&view, frame))?;
-        }
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 /// Read the boot snapshot and notify the renderer before the first draw.
@@ -219,15 +290,6 @@ where
     *view = latest;
     renderer.on_snapshot(view);
     true
-}
-
-fn quit_shortcut(event: &Event) -> bool {
-    let Event::Key(key) = event else {
-        return false;
-    };
-    key.kind.is_press()
-        && key.modifiers.contains(KeyModifiers::CONTROL)
-        && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('q'))
 }
 
 #[cfg(test)]

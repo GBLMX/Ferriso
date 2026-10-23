@@ -10,7 +10,8 @@ repository.workspace = true
 [dependencies]
 ferriso-diagnostics = { workspace = true }
 ferriso-core = { workspace = true }
-iced = { version = "0.14", features = ["tokio", "canvas", "image"] }
+ferriso-keymap = { workspace = true }
+iced = { version = "0.14", features = ["tokio", "canvas", "image", "advanced"] }
 bytemuck = { version = "1", features = ["derive"] }
 futures = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
@@ -19,3 +20,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 # `emit_to_string`, which needs a `WriteColor` buffer. wgpu enables `wgsl-in`
 # but not naga's `termcolor` feature, so unify it here.
 naga = { version = "27", default-features = false, features = ["termcolor"] }
+
+[dev-dependencies]
+ferriso-workspace = { workspace = true }

@@ -56,6 +56,9 @@ impl PlayerTui {
         }
 
         if key.modifiers.contains(KeyModifiers::CONTROL) {
+            if key.code == KeyCode::Char('q') {
+                return Outcome::Quit;
+            }
             let message = match key.code {
                 KeyCode::Char(' ') => Some(Message::PlayPause),
                 KeyCode::Left => Some(Message::Previous),
@@ -842,6 +845,18 @@ mod tests {
             Event::Key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE)),
         );
         assert!(matches!(outcome, Outcome::Message(Message::PlayPause)));
+    }
+
+    #[test]
+    fn ctrl_q_leaves_the_terminal_loop() {
+        let player = Player::new();
+        let view = player.view();
+        let mut renderer = PlayerTui::new();
+        let outcome = renderer.handle(
+            &view,
+            Event::Key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL)),
+        );
+        assert!(matches!(outcome, Outcome::Quit));
     }
 
     #[test]

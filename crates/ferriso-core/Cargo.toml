@@ -1,6 +1,6 @@
 [package]
 name = "ferriso-core"
-description = "Actor-owned application state, semantic events, and async command scheduling for Ferriso."
+description = "Actor-owned application state, semantic events, bounded command scheduling, and keyed subscriptions for Ferriso."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

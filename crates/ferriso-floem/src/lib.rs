@@ -138,7 +138,9 @@ pub fn run_with<V, M, R>(
     R: Renderer<V, M>,
 {
     let initial = snapshots.current();
-    let (tx, rx) = crossbeam_channel::unbounded();
+    // Capacity one coalesces bursts: the actor keeps only the latest snapshot,
+    // and the relay blocks instead of letting the UI backlog grow.
+    let (tx, rx) = crossbeam_channel::bounded(1);
 
     // Constructing the application installs the event-loop proxy used by
     // `quit_app` when the actor closes.
@@ -271,7 +273,9 @@ mod tests {
             let _enter = runtime.enter();
             ferriso_core::spawn(Counter(0))
         };
-        let (tx, rx) = crossbeam_channel::unbounded();
+        // Capacity one coalesces bursts: the actor keeps only the latest snapshot,
+        // and the relay blocks instead of letting the UI backlog grow.
+        let (tx, rx) = crossbeam_channel::bounded(1);
         let relay = relay_snapshots(snapshots, tx);
 
         handle.send(3);

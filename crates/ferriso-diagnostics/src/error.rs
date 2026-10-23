@@ -33,10 +33,23 @@ pub enum FrameworkError {
     #[diagnostic(
         code(ferriso::command::panic),
         help(
-            "The actor is still running, but the command's result was dropped. Find the panicking future and return an error message instead."
+            "The actor stopped and the command's result was dropped. Find the panicking future and return an error message instead."
         )
     )]
     CommandPanic {
+        phase: &'static str,
+        message: String,
+        task: u64,
+    },
+
+    #[error("a subscription stream panicked during `{phase}`: {message}")]
+    #[diagnostic(
+        code(ferriso::subscription::panic),
+        help(
+            "The actor stopped with the subscription. Move the failing work out of the stream or convert the failure into a message."
+        )
+    )]
+    SubscriptionPanic {
         phase: &'static str,
         message: String,
         task: u64,

@@ -11,13 +11,11 @@ use ferriso_diagnostics::{
 };
 use ferriso_gui::art::{self, Aurora, Palette as AuroraPalette};
 use ferriso_gui::iced::{
-    self, Alignment, Background, Border, Color, ContentFit, Element, Font, Length, Pixels, Point,
-    Radians, Rectangle, Size, Theme, Vector,
-    alignment::Vertical,
+    self, Alignment, Background, Border, Color, ContentFit, Element, Font, Length, Size, Theme,
     keyboard::{self, Key, key::Named},
     widget::{
-        Id, Space, Stack, button, canvas, container, image, mouse_area, pane_grid, rule,
-        scrollable, text, text_input,
+        Id, Space, Stack, button, container, image, mouse_area, pane_grid, rule, scrollable, text,
+        text_input,
     },
 };
 use ferriso_gui::{Message as GuiMessage, Renderer};
@@ -993,114 +991,32 @@ fn kind_initial(kind: Kind) -> &'static str {
     }
 }
 
-/// A canvas orbit of the current directory composition.
-struct Orbit {
-    buckets: [usize; 5],
-    time: f32,
-}
-
-impl canvas::Program<Msg> for Orbit {
-    type State = ();
-
-    fn draw(
-        &self,
-        _state: &Self::State,
-        renderer: &iced::Renderer,
-        _theme: &Theme,
-        bounds: Rectangle,
-        _cursor: iced::mouse::Cursor,
-    ) -> Vec<canvas::Geometry> {
-        let mut frame = canvas::Frame::new(renderer, bounds.size());
-        let center = frame.center();
-        let radius = (bounds.width.min(bounds.height) * 0.5 - 12.0).max(20.0);
-        let inner = radius * 0.66;
-        let total: usize = self.buckets.iter().sum();
-
-        for ring in 1..=3 {
-            let factor = ring as f32 / 3.0;
-            frame.stroke(
-                &canvas::Path::circle(center, radius * factor),
-                canvas::Stroke::<'_>::default()
-                    .with_color(Color { a: 0.08, ..MINT })
-                    .with_width(1.0),
-            );
-        }
-
-        let colors = [MINT, BLUE, GOLD, PINK, MUTED];
-        let mut angle = -std::f32::consts::FRAC_PI_2 + self.time * 0.18;
-        let tau = std::f32::consts::TAU;
-        let denominator = total.max(1) as f32;
-
-        for (index, count) in self.buckets.iter().map(|count| *count as f32).enumerate() {
-            let ratio = count / denominator;
-            if ratio > 0.0 {
-                let sweep = (ratio * tau - 0.03).max(0.01);
-                let path = ring_sector(center, inner, radius, angle, angle + sweep);
-                frame.fill(&path, colors[index]);
-            }
-            angle += ratio * tau;
-        }
-
-        let spark_angle = self.time * 0.9;
-        let spark = Point::new(
-            center.x + spark_angle.cos() * radius,
-            center.y + spark_angle.sin() * radius,
-        );
-        frame.fill(&canvas::Path::circle(spark, 3.0), Color { a: 0.9, ..MINT });
-
-        frame.fill_text(canvas::Text {
-            content: total.to_string(),
-            position: Point::new(center.x, center.y - 4.0),
-            color: TEXT,
-            size: Pixels(28.0),
-            font: Font::MONOSPACE,
-            align_x: Alignment::Center.into(),
-            align_y: Vertical::Center,
-            ..canvas::Text::default()
-        });
-        frame.fill_text(canvas::Text {
-            content: "items".into(),
-            position: Point::new(center.x, center.y + 22.0),
-            color: MUTED,
-            size: Pixels(10.0),
-            align_x: Alignment::Center.into(),
-            align_y: Vertical::Center,
-            ..canvas::Text::default()
-        });
-
-        vec![frame.into_geometry()]
-    }
-}
-
 fn orbit<'a>(buckets: [usize; 5], time: f32) -> Element<'a, Msg> {
-    canvas::Canvas::new(Orbit { buckets, time })
-        .width(Length::Fill)
-        .height(Length::Fixed(170.0))
-        .into()
-}
+    let colors = [MINT, BLUE, GOLD, PINK, MUTED];
+    let total: usize = buckets.iter().sum();
+    let segments = buckets
+        .iter()
+        .zip(colors)
+        .filter(|(count, _)| **count > 0)
+        .map(|(count, color)| art::OrbitSegment::new(*count as f32, color))
+        .collect();
 
-fn ring_sector(center: Point, inner: f32, outer: f32, start: f32, end: f32) -> canvas::Path {
-    canvas::Path::new(|builder| {
-        builder.move_to(polar(center, outer, start));
-        builder.arc(canvas::path::Arc {
-            center,
-            radius: outer,
-            start_angle: Radians(start),
-            end_angle: Radians(end),
-        });
-        builder.line_to(polar(center, inner, end));
-        builder.arc(canvas::path::Arc {
-            center,
-            radius: inner,
-            start_angle: Radians(end),
-            end_angle: Radians(start),
-        });
-        builder.close();
-    })
-}
-
-fn polar(center: Point, radius: f32, angle: f32) -> Point {
-    center + Vector::new(angle.cos() * radius, angle.sin() * radius)
+    container(art::orbit(art::Orbit {
+        segments,
+        time,
+        center: total.to_string(),
+        label: "items".into(),
+        rings: 3,
+        gap: 0.03,
+        spark: true,
+        text_color: TEXT,
+        label_color: MUTED,
+        guide_color: MINT,
+        spark_color: MINT,
+    }))
+    .width(Length::Fill)
+    .height(Length::Fixed(170.0))
+    .into()
 }
 
 #[cfg(test)]

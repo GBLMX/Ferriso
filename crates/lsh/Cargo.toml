@@ -1,0 +1,10 @@
+[package]
+name = "lsh"
+description = "Vendored LSH bytecode runtime from microsoft/edit for Ferriso syntax highlighting."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
