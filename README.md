@@ -653,10 +653,11 @@ chrome, pane contents, table columns, and stable row ids.
 ## Versioning and downstreams
 
 The workspace shares one version. While the project is `0.x`, a minor bump may
-break the contract; patches do not. The current line is `0.3.x`. Pigma is an
-external consumer pinned to `e021c99` (0.1.x), so it validates portability, not
-workspace HEAD. See [`docs/versioning.md`](docs/versioning.md) for the release
-and downstream matrix.
+break the contract; patches do not. The current line is `0.3.x`. Boxpigma is an
+external consumer pinned to `55d1745` (0.3.1), so it exercises the current
+contract alongside the workspace apps. See
+[`docs/versioning.md`](docs/versioning.md) for the release and downstream
+matrix.
 
 ## Tests
 
