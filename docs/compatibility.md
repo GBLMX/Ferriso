@@ -10,7 +10,7 @@ Compilation plus the core interaction path is the bar; feature parity is not.
 | `apps/player` | ✅ | ✅ | ✅ | TUI launches and quits with `Ctrl+Q`; iced builds against the same `Player` view model. |
 | `apps/editor` | ✅ | ✅ | ✅ | TUI draws a `TestBackend` snapshot, opens a file, inserts text, saves, and quits; iced launches with a live snapshot and close-request interception. |
 | `apps/yazi-desktop` | ✅ | ✅ | ✅ | TUI draws the shared `ViewModel`, navigates, filters, and previews; iced file-manager path builds and opens the layered config. |
-| `boxpigma` (external `pigma` repo) | ✅ | ✅ | ✅ | TUI and iced binaries compile; TUI starts, renders, and quits. It pins Ferriso `e021c99` (0.1.x), not workspace HEAD; see [`versioning.md`](versioning.md). |
+| `boxpigma` (external `boxpigma` repo) | ✅ | ✅ | ✅ | Pins Ferriso `55d1745` (0.3.1); workspace tests pass, TUI starts/renders/quits, and iced opens/closes a live window. See [`versioning.md`](versioning.md). |
 
 `—` means the frontend has not been attached. It is not a claim that the
 application cannot be attached.
@@ -88,17 +88,18 @@ warnings denied, and the full workspace test suite. The GitHub workflow
 `.github/workflows/compatibility.yml` runs the same script.
 
 `boxpigma` is not a workspace member because it is a downstream consumer. It
-pins `e021c99` (the 0.1 contract), so this check does not validate workspace
-HEAD. To check it against its pinned revision:
+pins Ferriso `55d1745` (0.3.1). To check it against its pinned revision:
 
 ```bash
-cd ../pigma
-cargo check --bins
+cd ../boxpigma
+cargo test --workspace
 cargo run --bin boxpigma
+cargo run --bin boxpigma-gui
 ```
 
 Its GUI binary is `boxpigma-gui`; the terminal binary is `boxpigma`. The smoke
-check used here started the TUI, observed a rendered frame, and quit with `q`.
+check started the TUI, observed a rendered frame, and quit with `q`; the iced
+window opened and exited cleanly on `Alt+F4`.
 
 ## Adapter translation budget
 
