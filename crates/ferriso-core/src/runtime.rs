@@ -1364,6 +1364,80 @@ mod tests {
             .expect("actor exits");
     }
 
+    struct ImmediateKeyedBatch {
+        first_started: Arc<AtomicUsize>,
+        seen: Vec<u32>,
+    }
+
+    enum ImmediateKeyedBatchMessage {
+        First,
+        Second,
+    }
+
+    impl App for ImmediateKeyedBatch {
+        type Message = ImmediateKeyedBatchMessage;
+        type View = Vec<u32>;
+
+        fn init(&mut self) -> Command<ImmediateKeyedBatchMessage> {
+            let first_started = self.first_started.clone();
+            Command::batch([
+                Command::perform_keyed(
+                    11,
+                    async move {
+                        first_started.fetch_add(1, AtomicOrdering::SeqCst);
+                        ImmediateKeyedBatchMessage::First
+                    },
+                    |message| message,
+                ),
+                Command::perform_keyed(
+                    11,
+                    async {
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                        ImmediateKeyedBatchMessage::Second
+                    },
+                    |message| message,
+                ),
+            ])
+        }
+
+        fn update(
+            &mut self,
+            message: ImmediateKeyedBatchMessage,
+        ) -> Command<ImmediateKeyedBatchMessage> {
+            match message {
+                ImmediateKeyedBatchMessage::First => self.seen.push(1),
+                ImmediateKeyedBatchMessage::Second => self.seen.push(2),
+            }
+            Command::none()
+        }
+
+        fn view(&self) -> Vec<u32> {
+            self.seen.clone()
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn batch_drops_an_immediate_keyed_command_before_spawning() {
+        let first_started = Arc::new(AtomicUsize::new(0));
+        let (handle, snapshots, task) = spawn(ImmediateKeyedBatch {
+            first_started: first_started.clone(),
+            seen: Vec::new(),
+        });
+
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert_eq!(
+            first_started.load(AtomicOrdering::SeqCst),
+            0,
+            "the replaced immediate future must not be spawned"
+        );
+        assert_eq!(*snapshots.current(), vec![2]);
+
+        handle.shutdown();
+        timeout(Duration::from_secs(1), task.join())
+            .await
+            .expect("actor exits");
+    }
+
     struct AsyncShutdown {
         order: Arc<Mutex<Vec<&'static str>>>,
     }

@@ -3,8 +3,7 @@
 //! A [`Command`] is a set of futures owned by the core actor. The actor spawns
 //! them on its Tokio runtime and feeds their results back as ordinary messages.
 
-use std::future::Future;
-use std::pin::Pin;
+use std::{collections::HashSet, future::Future, pin::Pin};
 
 type BoxFuture<M> = Pin<Box<dyn Future<Output = M> + Send + 'static>>;
 
@@ -90,14 +89,22 @@ impl<M> Command<M> {
     /// Run every command in `commands` concurrently.
     ///
     /// Keyed commands keep their keys; when two entries in the batch share a
-    /// key, the later entry replaces the earlier one.
+    /// key, only the last entry is spawned. Earlier entries are dropped before
+    /// the actor sees them, so an immediately-ready future cannot deliver a
+    /// result in the gap before its replacement is dispatched.
     pub fn batch(commands: impl IntoIterator<Item = Self>) -> Self {
-        Self {
-            futures: commands
-                .into_iter()
-                .flat_map(|command| command.futures)
-                .collect(),
-        }
+        let mut futures: Vec<_> = commands
+            .into_iter()
+            .flat_map(|command| command.futures)
+            .collect();
+        let mut seen = HashSet::new();
+        futures.reverse();
+        futures.retain(|entry| match entry.key {
+            Some(key) => seen.insert(key),
+            None => true,
+        });
+        futures.reverse();
+        Self { futures }
     }
 
     pub(crate) fn into_futures(self) -> impl Iterator<Item = (Option<u64>, BoxFuture<M>)> {
@@ -110,5 +117,43 @@ impl<M> Command<M> {
 impl<M> Default for Command<M> {
     fn default() -> Self {
         Self::none()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn keys(command: Command<()>) -> Vec<Option<u64>> {
+        command.into_futures().map(|(key, _)| key).collect()
+    }
+
+    #[test]
+    fn batch_spawns_only_the_last_command_for_a_key() {
+        let batch = Command::batch([
+            Command::perform_keyed(1, async {}, |_| ()),
+            Command::perform(async {}, |_| ()),
+            Command::perform_keyed(1, async {}, |_| ()),
+            Command::perform_keyed(2, async {}, |_| ()),
+        ]);
+
+        assert_eq!(keys(batch), vec![None, Some(1), Some(2)]);
+    }
+
+    #[test]
+    fn nested_batches_deduplicate_keys_across_boundaries() {
+        let first = Command::batch([
+            Command::perform_keyed(7, async {}, |_| ()),
+            Command::perform_keyed(7, async {}, |_| ()),
+        ]);
+        let second = Command::batch([
+            Command::perform_keyed(8, async {}, |_| ()),
+            Command::perform_keyed(7, async {}, |_| ()),
+        ]);
+
+        assert_eq!(
+            keys(Command::batch([first, second])),
+            vec![Some(8), Some(7)]
+        );
     }
 }

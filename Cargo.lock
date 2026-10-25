@@ -2500,7 +2500,7 @@ dependencies = [
 
 [[package]]
 name = "ferriso-config"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "config",
  "miette",
@@ -2510,7 +2510,7 @@ dependencies = [
 
 [[package]]
 name = "ferriso-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "ferriso-diagnostics",
  "futures",
@@ -2519,7 +2519,7 @@ dependencies = [
 
 [[package]]
 name = "ferriso-diagnostics"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "miette",
  "thiserror 2.0.21",
@@ -2527,7 +2527,7 @@ dependencies = [
 
 [[package]]
 name = "ferriso-editor"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "lsh",
  "tempfile",
@@ -2537,7 +2537,7 @@ dependencies = [
 
 [[package]]
 name = "ferriso-editor-app"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "ferriso-core",
  "ferriso-editor",
@@ -2548,7 +2548,7 @@ dependencies = [
 
 [[package]]
 name = "ferriso-floem"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "crossbeam-channel",
  "ferriso-core",
@@ -2559,7 +2559,7 @@ dependencies = [
 
 [[package]]
 name = "ferriso-gpui"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "ferriso-core",
  "futures",
@@ -2570,7 +2570,7 @@ dependencies = [
 
 [[package]]
 name = "ferriso-gui"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bytemuck",
  "ferriso-core",
@@ -2585,11 +2585,11 @@ dependencies = [
 
 [[package]]
 name = "ferriso-keymap"
-version = "0.3.0"
+version = "0.3.1"
 
 [[package]]
 name = "ferriso-platform"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "arboard",
  "futures-core",
@@ -2601,7 +2601,7 @@ dependencies = [
 
 [[package]]
 name = "ferriso-player"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "ferriso-config",
  "ferriso-core",
@@ -2615,7 +2615,7 @@ dependencies = [
 
 [[package]]
 name = "ferriso-test"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "ferriso-core",
  "ferriso-gui",
@@ -2625,7 +2625,7 @@ dependencies = [
 
 [[package]]
 name = "ferriso-tracing"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "ferriso-diagnostics",
  "tracing",
@@ -2634,7 +2634,7 @@ dependencies = [
 
 [[package]]
 name = "ferriso-tui"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "crossterm",
  "ferriso-core",
@@ -2646,7 +2646,7 @@ dependencies = [
 
 [[package]]
 name = "ferriso-twozero48"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "ferriso-core",
  "ferriso-gui",
@@ -2657,11 +2657,11 @@ dependencies = [
 
 [[package]]
 name = "ferriso-workspace"
-version = "0.3.0"
+version = "0.3.1"
 
 [[package]]
 name = "ferriso-yazi-desktop"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "ferriso-config",
@@ -4926,7 +4926,7 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "lsh"
-version = "0.3.0"
+version = "0.3.1"
 
 [[package]]
 name = "lyon"

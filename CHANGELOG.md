@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.1 - 2026-10-25
+
+### Fixed
+
+- `Command::batch` drops earlier entries that share a key before spawning. An
+  immediately-ready command can no longer deliver a message in the gap before
+  a later command with the same key replaces it.
+
+### Documented
+
+- Recorded live TUI and iced smoke checks for the player and editor against
+  this release in `docs/compatibility.md`.
+
 ## 0.3.0 - 2026-10-25
 
 ### Added

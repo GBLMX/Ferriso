@@ -20,6 +20,23 @@ matrix until the TUI + iced path stays clean across every application.
 `apps/twozero48` is a GUI-only downstream probe and is also outside the
 two-frontend matrix.
 
+## Release smoke: 0.3.1
+
+Run on the 2026-10-25 desktop session after rebuilding the binaries from the
+release source. TUI checks used a 120×40 pty and quit with `Ctrl+Q` after the
+first frame. Iced checks found the live window with `xdotool` and sent the
+window-manager close chord (`Alt+F4`); both applications exited cleanly.
+
+| Path | Binary | Result |
+| --- | --- | --- |
+| Player TUI | `ferriso-player-tui` | Rendered a frame containing `Ferriso`; exit 0. |
+| Player iced | `ferriso-player-gui` | Window opened; close request exited 0. |
+| Editor TUI | `ferriso-editor-tui README.md` | Rendered `Ferriso`, `README`, and the `Ctrl+Q` status line; exit 0. |
+| Editor iced | `ferriso-editor README.md` | Window opened; close request exited 0. |
+
+The headless release check was `./scripts/compat-check.sh`; the post-release
+suite was `cargo test --workspace` with 219 passing tests across 48 suites.
+
 ## What "pass" means
 
 1. `cargo test --workspace` passes.
