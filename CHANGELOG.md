@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `apps/ferriso-cli`: a Clawless-based `ferriso` command with `version`, `apps`,
+  `crates`, and `doctor` subcommands. The catalog and toolchain commands emit
+  structured artifacts, so the global `--json` flag produces machine-readable
+  output instead of formatted text.
+
 ## 0.3.1 - 2026-10-25
 
 ### Fixed

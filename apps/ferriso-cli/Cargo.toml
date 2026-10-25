@@ -1,0 +1,16 @@
+[package]
+name = "ferriso-cli"
+description = "The Ferriso framework command-line interface, built with Clawless."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+clawless = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+
+[[bin]]
+name = "ferriso"
+path = "src/main.rs"

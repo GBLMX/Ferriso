@@ -53,6 +53,7 @@ application, and never shares a widget tree with another frontend.
 | `ferriso-floem` | Floem adapter: snapshot signal, reactive native views, window lifecycle | `ferriso-core`, Floem, crossbeam |
 | `ferriso-editor` | GUI-independent editor core: gap buffer, grapheme/visual coordinates, undo transactions, incremental LSH highlighting | `lsh`, `unicode-segmentation`, `unicode-width` |
 | `lsh` | Vendored MIT LSH bytecode runtime and generated language definitions from `microsoft/edit` | std |
+| `apps/ferriso-cli` | Clawless-based `ferriso` command: framework version, crate/app catalog, and toolchain doctor | `clawless`, serde |
 | `apps/player` | Practice app: one model + view model, independent terminal and iced views | core, config, keymap, tui, iced |
 | `apps/yazi-desktop` | File manager proving the contract with layered config, terminal list/preview, orbit canvas, aurora shader, debug overlay | core, config, platform, gui, tui, diagnostics |
 | `apps/editor` | Tabbed editor over one actor-owned model: native iced canvas and ratatui views, soft wrap, search/replace, IME preedit, save guards, syntax highlighting | core, editor, gui, tui, platform |
@@ -659,6 +660,23 @@ contract alongside the workspace apps. See
 [`docs/versioning.md`](docs/versioning.md) for the release and downstream
 matrix.
 
+## Framework CLI
+
+`apps/ferriso-cli` is the Clawless-based `ferriso` command:
+
+```bash
+cargo run -p ferriso-cli -- --help
+cargo run -p ferriso-cli -- version
+cargo run -p ferriso-cli -- apps
+cargo run -p ferriso-cli -- crates
+cargo run -p ferriso-cli -- doctor
+cargo run -p ferriso-cli -- --json apps
+```
+
+Clawless owns argument parsing, async command execution, and presentation. The
+catalog commands emit structured artifacts, so `--json` is a stable machine
+surface; `doctor` checks the local `rustc`/`cargo` against the workspace MSRV.
+
 ## Tests
 
 The application × frontend status and the exact smoke commands live in
@@ -677,6 +695,8 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
+- `ferriso-cli`: unique crate/app catalogs, frontend labels, and stable/nightly
+  Rust version parsing for the doctor command.
 - `ferriso-diagnostics`: error code/help/cause rendering, quiet-by-default
   behavior, bounded rings, logger filtering, report contents, and export.
 - `ferriso-core`: command round trips, bounded-inbox bursts, command abort on

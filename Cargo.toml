@@ -18,6 +18,7 @@ members = [
     "apps/yazi-desktop",
     "apps/editor",
     "apps/twozero48",
+    "apps/ferriso-cli",
 ]
 resolver = "3"
 
@@ -30,6 +31,7 @@ repository = "https://github.com/GBLMX/Ferriso"
 
 [workspace.dependencies]
 anyhow = "1"
+clawless = "0.8"
 ferriso-diagnostics = { path = "crates/ferriso-diagnostics" }
 ferriso-core = { path = "crates/ferriso-core" }
 ferriso-keymap = { path = "crates/ferriso-keymap" }
