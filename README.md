@@ -111,8 +111,14 @@ Rules that keep the boundary real:
   on shutdown.
 - Selective cancellation is cooperative: keep a `CancellationToken` in app
   state, clone it into the command future, and cancel it when the work becomes
-  stale. The application decides which work stops; the actor does not abort
-  arbitrary user futures behind its back.
+  stale. The application decides which work stops; unkeyed command futures are
+  never aborted behind the application's back except at actor shutdown.
+- Latest-wins commands use `Command::perform_keyed(key, future, map)`. The
+  actor keeps at most one in-flight command per key; dispatching a new command
+  with the same key aborts the previous future without emitting a message.
+  Already-delivered results are ordinary messages and are not retracted. Use
+  this for search-as-you-type; do not use it for writes or installations that
+  must finish after the UI moves on.
 - Subscriptions are long-lived streams declared by `App::subscriptions` and
   keyed by a stable `u64`. The actor reconciles them after `init` and every
   update (and after a compatibility tick, when one is configured): new keys are
@@ -602,8 +608,9 @@ frontends; the adapter does not steal it for a hardcoded exit.
 
 `ferriso-gui` ships reusable artwork, skins, and interaction templates: the WGSL
 aurora backdrop, the canvas orbit chart, live bar strips and a progress gauge,
-tokenized surfaces and controls, a fuzzy command palette, and a bounded toast
-stack. The gallery combines them in one native window and switches between
+tokenized surfaces and controls, a fuzzy command palette, a searchable combobox,
+and a bounded toast stack. The design gallery combines the artwork, palette, and
+toasts in one native window and switches between
 Ferriso, YAZI, Windows 11, macOS, Windows 95, Mac OS Classic, CDE/Motif, and
 Ember skins. Corner radius, border weight, bevels, surface opacity, and accent
 contrast all change with the skin:
@@ -646,7 +653,7 @@ chrome, pane contents, table columns, and stable row ids.
 ## Versioning and downstreams
 
 The workspace shares one version. While the project is `0.x`, a minor bump may
-break the contract; patches do not. The current line is `0.2.x`. Pigma is an
+break the contract; patches do not. The current line is `0.3.x`. Pigma is an
 external consumer pinned to `e021c99` (0.1.x), so it validates portability, not
 workspace HEAD. See [`docs/versioning.md`](docs/versioning.md) for the release
 and downstream matrix.

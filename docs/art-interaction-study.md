@@ -66,6 +66,10 @@ stay small composable layers rather than a mandatory widget catalog.
 - **Page, Home, and End navigation** in `CommandPalette`, alongside the existing
   arrows, Enter, Escape, and Backspace.
 - **Empty palette feedback** instead of an unexplained blank list.
+- **Searchable combobox.** `Combobox` filters labels and details, skips disabled
+  rows during arrow/Page/Home/End navigation, clamps no-match activation, and
+  reports the selected original index. It starts unselected so forms control
+  their own defaults.
 - Existing bounded toasts remain the explicit-dismissal pattern.
 
 The design gallery uses the artwork, fuzzy palette, and toasts in one window.

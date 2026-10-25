@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 - 2026-10-25
+
+### Added
+
+- `Command::perform_keyed`: latest-wins commands. Dispatching a command with an
+  existing key aborts the previous future; the actor tracks keyed tasks by key
+  and only untracks the result that belongs to the current task.
+- `ferriso-gui::interaction::Combobox`: searchable dropdown state with fuzzy
+  label/detail filtering, disabled-option-aware keyboard navigation, paging,
+  explicit dismissal, and an inline view.
+
 ## 0.2.0 - 2026-10-23
 
 ### Changed

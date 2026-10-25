@@ -39,7 +39,7 @@ use ferriso_diagnostics::{Diagnostics, EventKind, FrameworkError, Level, TaskId}
 use futures::{FutureExt, StreamExt};
 use tokio::{
     sync::{mpsc, watch},
-    task::{JoinError, JoinHandle, JoinSet},
+    task::{AbortHandle, JoinError, JoinHandle, JoinSet},
     time::{Instant, Interval, MissedTickBehavior, interval_at},
 };
 
@@ -51,6 +51,10 @@ const TARGET: &str = "ferriso-core::actor";
 /// Command and subscription results share one bounded inbox. When it is full,
 /// producers wait instead of growing memory without limit.
 const INBOX_CAPACITY: usize = 256;
+
+type CommandOutput = (Option<u64>, tokio::task::Id);
+type CommandSet = JoinSet<CommandOutput>;
+type KeyedCommands = HashMap<u64, AbortHandle>;
 
 /// Runtime tuning for an actor.
 #[derive(Clone, Copy, Debug)]
@@ -333,6 +337,7 @@ fn spawn_inner<A: App>(
         let mut snapshot_sequence = 1_u64;
         let mut active_subscriptions: HashMap<u64, SubscriptionTask> = HashMap::new();
         let mut commands = JoinSet::new();
+        let mut keyed_commands: KeyedCommands = HashMap::new();
 
         if diagnostics.debug_enabled() {
             diagnostics.event(
@@ -343,7 +348,13 @@ fn spawn_inner<A: App>(
                 format!("initial #{snapshot_sequence}"),
             );
         }
-        dispatch(init, &mut commands, &command_tx, &diagnostics);
+        dispatch(
+            init,
+            &mut commands,
+            &mut keyed_commands,
+            &command_tx,
+            &diagnostics,
+        );
 
         let quit_after_start =
             guard(&diagnostics, task_id, "should_quit", || app.should_quit()).unwrap_or(true);
@@ -358,7 +369,7 @@ fn spawn_inner<A: App>(
             )
         {
             'actor: loop {
-                reap_commands(&mut commands, &diagnostics, task_id);
+                reap_commands(&mut commands, &mut keyed_commands, &diagnostics, task_id);
 
                 tokio::select! {
                     event = control_rx.recv() => {
@@ -381,7 +392,13 @@ fn spawn_inner<A: App>(
                                 else {
                                     break 'actor;
                                 };
-                                dispatch(command, &mut commands, &command_tx, &diagnostics);
+                                dispatch(
+                                    command,
+                                    &mut commands,
+                                    &mut keyed_commands,
+                                    &command_tx,
+                                    &diagnostics,
+                                );
                             }
                             Some(CoreEvent::Shutdown) | None => break 'actor,
                         }
@@ -435,7 +452,13 @@ fn spawn_inner<A: App>(
                         else {
                             break 'actor;
                         };
-                        dispatch(command, &mut commands, &command_tx, &diagnostics);
+                        dispatch(
+                            command,
+                            &mut commands,
+                            &mut keyed_commands,
+                            &command_tx,
+                            &diagnostics,
+                        );
 
                         if !publish(
                             &app,
@@ -460,7 +483,13 @@ fn spawn_inner<A: App>(
                         }) else {
                             break 'actor;
                         };
-                        dispatch(command, &mut commands, &command_tx, &diagnostics);
+                        dispatch(
+                            command,
+                            &mut commands,
+                            &mut keyed_commands,
+                            &command_tx,
+                            &diagnostics,
+                        );
 
                         if !publish(
                             &app,
@@ -743,11 +772,18 @@ fn reconcile_subscriptions<A: App>(
 
 fn dispatch<M: Send + 'static>(
     command: Command<M>,
-    commands: &mut JoinSet<()>,
+    commands: &mut CommandSet,
+    keyed_commands: &mut KeyedCommands,
     tx: &mpsc::Sender<InboxMessage<M>>,
     diagnostics: &Diagnostics,
 ) {
-    for future in command.into_futures() {
+    for (key, future) in command.into_futures() {
+        if let Some(key) = key
+            && let Some(previous) = keyed_commands.remove(&key)
+        {
+            previous.abort();
+        }
+
         let command_task = diagnostics.next_task();
         diagnostics.event(
             EventKind::Command,
@@ -760,7 +796,8 @@ fn dispatch<M: Send + 'static>(
         let diagnostics = diagnostics.clone();
         let joined = AssertUnwindSafe(future).catch_unwind();
 
-        commands.spawn(async move {
+        let handle = commands.spawn(async move {
+            let task_id = tokio::task::id();
             match joined.await {
                 Ok(message) => {
                     let _ = tx
@@ -788,20 +825,43 @@ fn dispatch<M: Send + 'static>(
                         .await;
                 }
             }
+            (key, task_id)
         });
+
+        if let Some(key) = key {
+            keyed_commands.insert(key, handle);
+        }
     }
 }
 
-fn reap_commands(commands: &mut JoinSet<()>, diagnostics: &Diagnostics, task: TaskId) {
+fn reap_commands(
+    commands: &mut CommandSet,
+    keyed_commands: &mut KeyedCommands,
+    diagnostics: &Diagnostics,
+    task: TaskId,
+) {
     while let Some(result) = commands.try_join_next() {
-        if let Err(error) = result {
-            diagnostics.log(
-                Level::Warn,
-                TARGET,
-                "command",
-                task,
-                &format!("command task ended abnormally: {error}"),
-            );
+        match result {
+            Ok((Some(key), task_id)) => {
+                if keyed_commands
+                    .get(&key)
+                    .is_some_and(|handle| handle.id() == task_id)
+                {
+                    keyed_commands.remove(&key);
+                }
+            }
+            Ok((None, _)) => {}
+            // Replacing a keyed command aborts the previous future by design.
+            Err(error) if error.is_cancelled() => {}
+            Err(error) => {
+                diagnostics.log(
+                    Level::Warn,
+                    TARGET,
+                    "command",
+                    task,
+                    &format!("command task ended abnormally: {error}"),
+                );
+            }
         }
     }
 }
@@ -1101,6 +1161,207 @@ mod tests {
             0,
             "aborted command must not run"
         );
+    }
+
+    struct KeyedReplacement {
+        seen: Vec<u32>,
+    }
+
+    enum KeyedReplacementMessage {
+        Replace,
+        Finished(u32),
+    }
+
+    impl App for KeyedReplacement {
+        type Message = KeyedReplacementMessage;
+        type View = Vec<u32>;
+
+        fn init(&mut self) -> Command<KeyedReplacementMessage> {
+            Command::batch([
+                Command::perform_keyed(
+                    7,
+                    async {
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        KeyedReplacementMessage::Finished(1)
+                    },
+                    |message| message,
+                ),
+                Command::perform(async { KeyedReplacementMessage::Replace }, |message| {
+                    message
+                }),
+            ])
+        }
+
+        fn update(&mut self, message: KeyedReplacementMessage) -> Command<KeyedReplacementMessage> {
+            match message {
+                KeyedReplacementMessage::Replace => Command::perform_keyed(
+                    7,
+                    async {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                        KeyedReplacementMessage::Finished(2)
+                    },
+                    |message| message,
+                ),
+                KeyedReplacementMessage::Finished(id) => {
+                    self.seen.push(id);
+                    Command::none()
+                }
+            }
+        }
+
+        fn view(&self) -> Vec<u32> {
+            self.seen.clone()
+        }
+    }
+
+    #[tokio::test]
+    async fn keyed_command_replacement_aborts_the_previous_future() {
+        let (handle, snapshots, task) = spawn(KeyedReplacement { seen: Vec::new() });
+
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        assert_eq!(
+            *snapshots.current(),
+            vec![2],
+            "the replaced command must not deliver a result"
+        );
+
+        handle.shutdown();
+        timeout(Duration::from_secs(1), task.join())
+            .await
+            .expect("actor exits");
+    }
+
+    struct KeyedCompletionRace {
+        seen: Vec<u32>,
+    }
+
+    enum KeyedCompletionMessage {
+        First,
+        Replace,
+        Second,
+        Third,
+    }
+
+    impl App for KeyedCompletionRace {
+        type Message = KeyedCompletionMessage;
+        type View = Vec<u32>;
+
+        fn init(&mut self) -> Command<KeyedCompletionMessage> {
+            Command::perform_keyed(9, async { KeyedCompletionMessage::First }, |message| {
+                message
+            })
+        }
+
+        fn update(&mut self, message: KeyedCompletionMessage) -> Command<KeyedCompletionMessage> {
+            match message {
+                KeyedCompletionMessage::First => {
+                    self.seen.push(1);
+                    Command::batch([
+                        Command::perform_keyed(
+                            9,
+                            async {
+                                tokio::time::sleep(Duration::from_millis(500)).await;
+                                KeyedCompletionMessage::Second
+                            },
+                            |message| message,
+                        ),
+                        Command::perform(async { KeyedCompletionMessage::Replace }, |message| {
+                            message
+                        }),
+                    ])
+                }
+                KeyedCompletionMessage::Replace => Command::perform_keyed(
+                    9,
+                    async {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                        KeyedCompletionMessage::Third
+                    },
+                    |message| message,
+                ),
+                KeyedCompletionMessage::Second => {
+                    self.seen.push(2);
+                    Command::none()
+                }
+                KeyedCompletionMessage::Third => {
+                    self.seen.push(3);
+                    Command::none()
+                }
+            }
+        }
+
+        fn view(&self) -> Vec<u32> {
+            self.seen.clone()
+        }
+    }
+
+    #[tokio::test]
+    async fn completing_a_keyed_command_does_not_untrack_its_replacement() {
+        let (handle, snapshots, task) = spawn(KeyedCompletionRace { seen: Vec::new() });
+
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        assert_eq!(
+            *snapshots.current(),
+            vec![1, 3],
+            "the replacement must stay registered after the previous result returns"
+        );
+
+        handle.shutdown();
+        timeout(Duration::from_secs(1), task.join())
+            .await
+            .expect("actor exits");
+    }
+
+    struct KeyedDistinct {
+        seen: Vec<u32>,
+    }
+
+    impl App for KeyedDistinct {
+        type Message = u32;
+        type View = Vec<u32>;
+
+        fn init(&mut self) -> Command<u32> {
+            let first = Command::perform_keyed(
+                1,
+                async {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    1
+                },
+                |id| id,
+            );
+            let second = Command::perform_keyed(
+                2,
+                async {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    2
+                },
+                |id| id,
+            );
+            Command::batch([first, second])
+        }
+
+        fn update(&mut self, id: u32) -> Command<u32> {
+            self.seen.push(id);
+            Command::none()
+        }
+
+        fn view(&self) -> Vec<u32> {
+            self.seen.clone()
+        }
+    }
+
+    #[tokio::test]
+    async fn distinct_keyed_commands_run_concurrently() {
+        let (handle, snapshots, task) = spawn(KeyedDistinct { seen: Vec::new() });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let mut seen = snapshots.current().as_ref().clone();
+        seen.sort_unstable();
+        assert_eq!(seen, vec![1, 2]);
+
+        handle.shutdown();
+        timeout(Duration::from_secs(1), task.join())
+            .await
+            .expect("actor exits");
     }
 
     struct AsyncShutdown {

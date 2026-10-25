@@ -24,10 +24,10 @@ revision are consuming a snapshot of the contract, not a released version.
 
 | Consumer | Ferriso revision | Version line | Verified paths |
 | --- | --- | --- | --- |
-| workspace apps | HEAD | 0.2.x | core/adapters tests; player, editor, yazi-desktop TUI and iced builds |
+| workspace apps | HEAD | 0.3.x | core/adapters tests; player, editor, yazi-desktop TUI and iced builds |
 | `boxpigma` | `e021c99` | 0.1.x | TUI and iced compile; TUI launch/render/quit smoke |
 
-The pigma pin validates the 0.1 contract, not HEAD. When pigma moves to 0.2, it
+The pigma pin validates the 0.1 contract, not HEAD. When pigma moves to 0.3, it
 must run the same core interaction path against the new revision and record the
 pin here. The deprecated tick hooks remain specifically so that migration does
 not need to be atomic.
