@@ -682,6 +682,10 @@ fn draw(frame: &mut Frame, time: f32) {
 }
 ```
 
+`cargo run -p ferriso-tui --example art` runs the aurora, gradient, pulse, and
+shimmer demo in a terminal; `q` / `Esc` exits. The render test asserts that the
+aurora and gradient actually write cell backgrounds, not only colors.
+
 The palette and primitives are plain data + pure functions; terminal color
 downgrading remains the frontend's responsibility.
 

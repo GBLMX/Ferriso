@@ -206,6 +206,10 @@ impl Aurora {
 
     /// Color for one cell. Coordinates outside `area` are clamped.
     pub fn color_at(&self, area: Rect, x: u16, y: u16) -> Color {
+        let max_x = area.x.saturating_add(area.width.saturating_sub(1));
+        let max_y = area.y.saturating_add(area.height.saturating_sub(1));
+        let x = x.clamp(area.x, max_x);
+        let y = y.clamp(area.top(), max_y);
         let width = f32::from(area.width.max(1));
         let height = f32::from(area.height.max(1));
         let fx = f32::from(x.saturating_sub(area.x)) / width;
@@ -360,6 +364,10 @@ mod tests {
         let aurora = Aurora::new(1.25, Palette::FERRISO).intensity(1.5);
         assert_eq!(aurora.intensity, 1.0);
         assert_eq!(aurora.color_at(area(), 3, 2), aurora.color_at(area(), 3, 2));
+        assert_eq!(
+            aurora.color_at(area(), u16::MAX, u16::MAX),
+            aurora.color_at(area(), 7, 3)
+        );
         let Color::Rgb(r, g, b) = aurora.color_at(area(), 3, 2) else {
             panic!("aurora must use RGB");
         };
@@ -378,5 +386,28 @@ mod tests {
             let color = shimmer.color_at(3, 20, step as f32 * 0.1);
             assert!(matches!(color, Color::Rgb(..)));
         }
+    }
+    #[test]
+    fn gradients_and_aurora_write_backgrounds() {
+        let area = area();
+        let mut buffer = Buffer::empty(area);
+        let gradient = Gradient::horizontal(Color::Rgb(1, 2, 3), Color::Rgb(4, 5, 6));
+        gradient.paint(area, &mut buffer);
+        assert_eq!(
+            buffer.cell((0, 0)).map(|cell| cell.bg),
+            Some(Color::Rgb(1, 2, 3))
+        );
+        assert_eq!(
+            buffer.cell((7, 0)).map(|cell| cell.bg),
+            Some(Color::Rgb(4, 5, 6))
+        );
+
+        let aurora = Aurora::new(2.0, Palette::FERRISO);
+        let mut buffer = Buffer::empty(area);
+        aurora.render(area, &mut buffer);
+        assert_eq!(
+            buffer.cell((3, 2)).map(|cell| cell.bg),
+            Some(aurora.color_at(area, 3, 2))
+        );
     }
 }
