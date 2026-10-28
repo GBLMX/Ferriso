@@ -2658,6 +2658,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ferriso-data-workbench"
+version = "0.3.1"
+dependencies = [
+ "ferriso-core",
+ "ferriso-gui",
+ "ferriso-tui",
+ "ferriso-workspace",
+]
+
+[[package]]
 name = "ferriso-diagnostics"
 version = "0.3.1"
 dependencies = [

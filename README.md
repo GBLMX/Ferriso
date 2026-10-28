@@ -55,6 +55,7 @@ application, and never shares a widget tree with another frontend.
 | `lsh` | Vendored MIT LSH bytecode runtime and generated language definitions from `microsoft/edit` | std |
 | `apps/ferriso-cli` | Clawless-based `ferriso` command: framework version, crate/app catalog, and toolchain doctor | `clawless`, serde |
 | `apps/player` | Practice app: one model + view model, independent terminal and iced views | core, config, keymap, tui, iced |
+| `apps/data-workbench` | 100k-row Modrinth-like project catalog dogfooding the shared table model in terminal and iced views | core, workspace, tui, gui |
 | `apps/yazi-desktop` | File manager proving the contract with layered config, terminal list/preview, orbit canvas, aurora shader, debug overlay | core, config, platform, gui, tui, diagnostics |
 | `apps/editor` | Tabbed editor over one actor-owned model: native iced canvas and ratatui views, soft wrap, search/replace, IME preedit, save guards, syntax highlighting | core, editor, gui, tui, platform |
 | `apps/twozero48` | Animated GUI-only 2048 probe using the upstream `twozero48` board rules | core, gui, keymap, `twozero48`, `rand` |

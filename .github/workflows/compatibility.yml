@@ -49,5 +49,6 @@ jobs:
           set -euo pipefail
           cargo test --locked -p ferriso-core -p ferriso-config -p ferriso-diagnostics \
             -p ferriso-editor -p ferriso-platform -p ferriso-workspace \
-            -p ferriso-keymap -p ferriso-tui -p ferriso-test -p ferriso-editor-app
+            -p ferriso-keymap -p ferriso-tui -p ferriso-test -p ferriso-editor-app \
+            -p ferriso-data-workbench
           cargo test --locked -p ferriso-platform --no-default-features

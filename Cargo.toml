@@ -15,6 +15,7 @@ members = [
     "crates/ferriso-editor",
     "crates/lsh",
     "apps/player",
+    "apps/data-workbench",
     "apps/yazi-desktop",
     "apps/editor",
     "apps/twozero48",

@@ -1,0 +1,26 @@
+[package]
+name = "ferriso-data-workbench"
+description = "A 100k-row data workbench proving Ferriso's shared TUI/iced table model."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ferriso-core = { workspace = true }
+ferriso-gui = { workspace = true }
+ferriso-tui = { workspace = true }
+ferriso-workspace = { workspace = true }
+
+[lib]
+name = "ferriso_data_workbench"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ferriso-data-workbench-tui"
+path = "src/main_tui.rs"
+
+[[bin]]
+name = "ferriso-data-workbench-gui"
+path = "src/main_gui.rs"
