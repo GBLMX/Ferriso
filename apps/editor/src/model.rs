@@ -7,11 +7,14 @@
 use std::{
     ops::Range,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use ferriso_core::{App, Command};
 use ferriso_editor::{Editor, EditorView};
-use ferriso_platform::{Clipboard, FileDialog, SystemClipboard, SystemFileDialog};
+use ferriso_platform::{
+    Clipboard, FileDialog, SystemClipboard, SystemFileDialog, pick_file_async, save_file_async,
+};
 
 struct Tab {
     editor: Editor,
@@ -50,6 +53,15 @@ pub struct FocusRequest {
 pub enum Modal {
     CloseTab(usize),
     Quit,
+}
+
+/// The dialog result to apply after the blocking picker returns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DialogAction {
+    Open,
+    Save { index: usize, close_after: bool },
+    SaveAs { index: usize },
+    SaveAll { index: usize },
 }
 
 #[derive(Clone, Debug)]
@@ -141,6 +153,10 @@ pub enum EditorMessage {
     Escape,
     Quit,
     CloseRequested,
+    DialogResult {
+        action: DialogAction,
+        result: Result<Option<PathBuf>, String>,
+    },
 }
 
 #[derive(Default)]
@@ -168,11 +184,18 @@ pub struct EditorModel {
     quit: bool,
     snapshot: EditorSnapshot,
     clipboard: Option<SystemClipboard>,
-    dialog: SystemFileDialog,
+    dialog: Arc<dyn FileDialog>,
+    pending_dialog: Option<DialogAction>,
 }
 
 impl EditorModel {
     pub fn new(path: Option<PathBuf>) -> Self {
+        Self::with_dialog(path, Arc::new(SystemFileDialog::new()))
+    }
+
+    /// Build a model with an injectable dialog backend.
+    #[must_use]
+    pub fn with_dialog(path: Option<PathBuf>, dialog: Arc<dyn FileDialog>) -> Self {
         let mut editor = match path {
             Some(path) => match Editor::open(&path) {
                 Ok(editor) => editor,
@@ -215,7 +238,8 @@ impl EditorModel {
                 defer_resize: false,
             },
             clipboard: SystemClipboard::new().ok(),
-            dialog: SystemFileDialog::new(),
+            dialog,
+            pending_dialog: None,
         };
         model.refresh();
         model
@@ -330,10 +354,8 @@ impl EditorModel {
         self.search.cached = None;
     }
 
-    fn open_dialog(&mut self) {
-        if let Some(path) = self.dialog.pick_file() {
-            self.open_file(path);
-        }
+    fn open_dialog(&mut self) -> Command<EditorMessage> {
+        self.start_dialog(DialogAction::Open)
     }
 
     fn open_file(&mut self, path: PathBuf) {
@@ -364,42 +386,54 @@ impl EditorModel {
         }
     }
 
-    fn save_tab(&mut self, index: usize) -> bool {
+    fn start_dialog(&mut self, action: DialogAction) -> Command<EditorMessage> {
+        if self.pending_dialog.is_some() {
+            return Command::none();
+        }
+        self.pending_dialog = Some(action);
+        let dialog = Arc::clone(&self.dialog);
+        let open = matches!(action, DialogAction::Open);
+
+        Command::perform(
+            async move {
+                let result = if open {
+                    pick_file_async(dialog).await
+                } else {
+                    save_file_async(dialog).await
+                };
+                result.map_err(|error| error.to_string())
+            },
+            move |result| EditorMessage::DialogResult { action, result },
+        )
+    }
+
+    fn save_current(&mut self) -> Command<EditorMessage> {
+        let index = self.active;
         if index >= self.tabs.len() {
-            return false;
+            return Command::none();
         }
-        let has_path = self.tabs[index].editor.path().is_some();
-        let path = if has_path {
-            None
-        } else {
-            match self.dialog.save_file() {
-                Some(path) => Some(path),
-                None => return false,
-            }
-        };
-        let result = if let Some(path) = path {
-            self.tabs[index].editor.save_as(path)
-        } else {
-            self.tabs[index].editor.save()
-        };
-        match result {
-            Ok(()) => true,
-            Err(error) => {
-                self.tabs[index].editor.set_status(format!("{error}"));
-                false
-            }
+        if self.tabs[index].editor.path().is_some() {
+            self.save_tab_existing(index);
+            return Command::none();
         }
+        self.start_save_dialog(
+            index,
+            DialogAction::Save {
+                index,
+                close_after: false,
+            },
+        )
     }
 
-    fn save_as_dialog(&mut self) {
-        if let Some(path) = self.dialog.save_file()
-            && let Err(error) = self.tabs[self.active].editor.save_as(path)
-        {
-            self.active_editor_mut().set_status(format!("{error}"));
+    fn save_as_dialog(&mut self) -> Command<EditorMessage> {
+        let index = self.active;
+        if index >= self.tabs.len() {
+            return Command::none();
         }
+        self.start_save_dialog(index, DialogAction::SaveAs { index })
     }
 
-    fn save_all(&mut self) -> bool {
+    fn save_all(&mut self) -> Command<EditorMessage> {
         let indices: Vec<usize> = self
             .tabs
             .iter()
@@ -408,11 +442,85 @@ impl EditorModel {
             .map(|(index, _)| index)
             .collect();
         for index in indices {
-            if !self.save_tab(index) {
-                return false;
+            if self.tabs[index].editor.path().is_none() {
+                return self.start_save_dialog(index, DialogAction::SaveAll { index });
+            }
+            if !self.save_tab_existing(index) {
+                return Command::none();
             }
         }
-        true
+        self.modal = None;
+        self.quit = true;
+        Command::none()
+    }
+
+    fn start_save_dialog(&mut self, index: usize, action: DialogAction) -> Command<EditorMessage> {
+        if index >= self.tabs.len() {
+            return Command::none();
+        }
+        self.start_dialog(action)
+    }
+
+    fn save_tab_existing(&mut self, index: usize) -> bool {
+        if index >= self.tabs.len() || self.tabs[index].editor.path().is_none() {
+            return false;
+        }
+        match self.tabs[index].editor.save() {
+            Ok(()) => true,
+            Err(error) => {
+                self.tabs[index].editor.set_status(format!("{error}"));
+                false
+            }
+        }
+    }
+
+    fn save_to_path(&mut self, index: usize, path: &Path) -> bool {
+        if index >= self.tabs.len() {
+            return false;
+        }
+        match self.tabs[index].editor.save_as(path) {
+            Ok(()) => true,
+            Err(error) => {
+                self.tabs[index].editor.set_status(format!("{error}"));
+                false
+            }
+        }
+    }
+
+    fn handle_dialog_result(
+        &mut self,
+        action: DialogAction,
+        result: Result<Option<PathBuf>, String>,
+    ) -> Command<EditorMessage> {
+        self.pending_dialog = None;
+        let path = match result {
+            Ok(Some(path)) => path,
+            Ok(None) => return Command::none(),
+            Err(error) => {
+                self.active_editor_mut()
+                    .set_status(format!("file dialog: {error}"));
+                return Command::none();
+            }
+        };
+
+        match action {
+            DialogAction::Open => self.open_file(path),
+            DialogAction::Save { index, close_after } => {
+                if self.save_to_path(index, &path) && close_after {
+                    self.modal = None;
+                    self.close_tab(index);
+                }
+            }
+            DialogAction::SaveAs { index } => {
+                self.save_to_path(index, &path);
+            }
+            DialogAction::SaveAll { index } => {
+                if self.save_to_path(index, &path) {
+                    return self.save_all();
+                }
+            }
+        }
+        Command::none()
     }
 
     fn request_quit(&mut self) {
@@ -434,16 +542,30 @@ impl EditorModel {
         }
     }
 
-    fn modal_save(&mut self) {
+    fn modal_save(&mut self) -> Command<EditorMessage> {
         match self.modal {
             Some(Modal::CloseTab(index)) => {
-                if self.save_tab(index) {
+                if index >= self.tabs.len() {
                     self.modal = None;
-                    self.close_tab(index);
+                    return Command::none();
                 }
+                if self.tabs[index].editor.path().is_some() {
+                    if self.save_tab_existing(index) {
+                        self.modal = None;
+                        self.close_tab(index);
+                    }
+                    return Command::none();
+                }
+                self.start_save_dialog(
+                    index,
+                    DialogAction::Save {
+                        index,
+                        close_after: true,
+                    },
+                )
             }
-            Some(Modal::Quit) => self.quit = self.save_all(),
-            None => {}
+            Some(Modal::Quit) => self.save_all(),
+            None => Command::none(),
         }
     }
 
@@ -682,6 +804,12 @@ impl App for EditorModel {
     type View = EditorSnapshot;
 
     fn update(&mut self, message: EditorMessage) -> Command<EditorMessage> {
+        // A native picker is modal. Ignore concurrent edits that could
+        // invalidate the tab index captured when the dialog started.
+        if self.pending_dialog.is_some() && !matches!(&message, EditorMessage::DialogResult { .. })
+        {
+            return Command::none();
+        }
         if self.search.open && matches!(message, EditorMessage::Tab) {
             self.search.focus_replacement = self.search.replace && !self.search.focus_replacement;
             self.request_focus(if self.search.focus_replacement {
@@ -698,11 +826,19 @@ impl App for EditorModel {
         match message {
             EditorMessage::Quit | EditorMessage::CloseRequested => self.request_quit(),
             EditorMessage::New => self.new_tab(),
-            EditorMessage::Open => self.open_dialog(),
-            EditorMessage::Save => {
-                self.save_tab(self.active);
+            EditorMessage::Open => {
+                self.refresh();
+                return self.open_dialog();
             }
-            EditorMessage::SaveAs => self.save_as_dialog(),
+            EditorMessage::Save => {
+                let command = self.save_current();
+                self.refresh();
+                return command;
+            }
+            EditorMessage::SaveAs => {
+                self.refresh();
+                return self.save_as_dialog();
+            }
             EditorMessage::SelectTab(index) => self.select_tab(index),
             EditorMessage::NextTab => self.cycle_tab(1),
             EditorMessage::PreviousTab => self.cycle_tab(-1),
@@ -812,7 +948,11 @@ impl App for EditorModel {
             }
             EditorMessage::ReplaceCurrent => self.replace_current(),
             EditorMessage::ReplaceAll => self.replace_all(),
-            EditorMessage::ModalSave => self.modal_save(),
+            EditorMessage::ModalSave => {
+                let command = self.modal_save();
+                self.refresh();
+                return command;
+            }
             EditorMessage::ModalDiscard => self.modal_discard(),
             EditorMessage::ModalCancel => self.modal = None,
             EditorMessage::Escape => {
@@ -821,6 +961,11 @@ impl App for EditorModel {
                 } else if self.search.open {
                     self.close_search();
                 }
+            }
+            EditorMessage::DialogResult { action, result } => {
+                let command = self.handle_dialog_result(action, result);
+                self.refresh();
+                return command;
             }
         }
         self.refresh();
@@ -890,6 +1035,189 @@ pub fn replace_matches_in(text: &str, matches: &[Range<usize>], replacement: &st
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn temp_path(tag: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "ferriso-editor-{tag}-{}-{}.txt",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn synchronous_save_refreshes_the_snapshot() {
+        use ferriso_platform::MemoryFileDialog;
+
+        let path = temp_path("sync-save");
+        std::fs::write(&path, "").expect("fixture");
+        let mut model =
+            EditorModel::with_dialog(Some(path.clone()), Arc::new(MemoryFileDialog::new()));
+        model.update(EditorMessage::Insert("hello".into()));
+        model.update(EditorMessage::Save);
+
+        assert_eq!(model.view().view.path.as_deref(), Some(path.as_path()));
+        assert!(!model.view().view.dirty);
+        assert_eq!(std::fs::read_to_string(&path).expect("saved"), "hello");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn synchronous_close_save_refreshes_the_snapshot() {
+        use ferriso_platform::MemoryFileDialog;
+
+        let path = temp_path("sync-close-save");
+        std::fs::write(&path, "").expect("fixture");
+        let mut model =
+            EditorModel::with_dialog(Some(path.clone()), Arc::new(MemoryFileDialog::new()));
+        model.update(EditorMessage::Insert("hello".into()));
+        model.update(EditorMessage::CloseTab(0));
+        model.update(EditorMessage::ModalSave);
+
+        assert!(model.view().modal.is_none());
+        assert!(model.view().view.path.is_none());
+        assert!(!model.view().view.dirty);
+        assert_eq!(std::fs::read_to_string(&path).expect("saved"), "hello");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn pending_dialog_freezes_tab_mutations() {
+        let mut model = EditorModel::new(None);
+        model.update(EditorMessage::Insert("x".into()));
+        model.pending_dialog = Some(DialogAction::Save {
+            index: 0,
+            close_after: false,
+        });
+
+        model.update(EditorMessage::CloseTab(0));
+        assert_eq!(model.view().tabs.len(), 1);
+
+        model.update(EditorMessage::DialogResult {
+            action: DialogAction::Save {
+                index: 0,
+                close_after: false,
+            },
+            result: Ok(None),
+        });
+        assert!(model.pending_dialog.is_none());
+    }
+
+    #[test]
+    fn save_all_dialog_finishes_quit_after_the_tab_is_saved() {
+        use ferriso_platform::MemoryFileDialog;
+
+        let path = temp_path("save-all");
+        let dialog: Arc<dyn FileDialog> = Arc::new(MemoryFileDialog::new().with_save(&path));
+        let mut model = EditorModel::with_dialog(None, dialog);
+        model.update(EditorMessage::Insert("hello".into()));
+        model.update(EditorMessage::Quit);
+        model.update(EditorMessage::ModalSave);
+        assert_eq!(
+            model.pending_dialog,
+            Some(DialogAction::SaveAll { index: 0 })
+        );
+
+        model.update(EditorMessage::DialogResult {
+            action: DialogAction::SaveAll { index: 0 },
+            result: Ok(Some(path.clone())),
+        });
+        assert!(model.should_quit());
+        assert!(model.pending_dialog.is_none());
+        assert_eq!(std::fs::read_to_string(&path).expect("saved"), "hello");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn close_after_save_dialog_closes_the_saved_tab() {
+        use ferriso_platform::MemoryFileDialog;
+
+        let path = temp_path("close-save");
+        let dialog: Arc<dyn FileDialog> = Arc::new(MemoryFileDialog::new().with_save(&path));
+        let mut model = EditorModel::with_dialog(None, dialog);
+        model.update(EditorMessage::Insert("hello".into()));
+        model.update(EditorMessage::CloseTab(0));
+        model.update(EditorMessage::ModalSave);
+        assert_eq!(
+            model.pending_dialog,
+            Some(DialogAction::Save {
+                index: 0,
+                close_after: true,
+            })
+        );
+
+        model.update(EditorMessage::DialogResult {
+            action: DialogAction::Save {
+                index: 0,
+                close_after: true,
+            },
+            result: Ok(Some(path.clone())),
+        });
+        assert!(model.view().modal.is_none());
+        assert!(model.view().view.path.is_none());
+        assert!(!model.view().view.dirty);
+        assert_eq!(std::fs::read_to_string(&path).expect("saved"), "hello");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn open_dialog_feeds_the_actor_asynchronously() {
+        use ferriso_platform::MemoryFileDialog;
+
+        let path = temp_path("open");
+        std::fs::write(&path, "hello").expect("fixture");
+        let dialog: Arc<dyn FileDialog> = Arc::new(MemoryFileDialog::new().with_file(&path));
+        let (handle, mut snapshots, task) =
+            ferriso_core::spawn(EditorModel::with_dialog(None, dialog));
+
+        assert!(handle.send(EditorMessage::Open));
+        let view = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let view = snapshots.changed().await.expect("actor alive");
+                if view.view.path.as_deref() == Some(path.as_path()) {
+                    break view;
+                }
+            }
+        })
+        .await
+        .expect("open result");
+        assert_eq!(view.view.line_count, 1);
+
+        handle.shutdown();
+        task.join().await;
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn save_dialog_writes_without_running_on_the_actor() {
+        use ferriso_platform::MemoryFileDialog;
+
+        let path = temp_path("save");
+        let dialog: Arc<dyn FileDialog> = Arc::new(MemoryFileDialog::new().with_save(&path));
+        let (handle, mut snapshots, task) =
+            ferriso_core::spawn(EditorModel::with_dialog(None, dialog));
+
+        assert!(handle.send(EditorMessage::Insert("hello".into())));
+        assert!(handle.send(EditorMessage::Save));
+        let view = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let view = snapshots.changed().await.expect("actor alive");
+                if view.view.path.as_deref() == Some(path.as_path()) && !view.view.dirty {
+                    break view;
+                }
+            }
+        })
+        .await
+        .expect("save result");
+        assert_eq!(view.view.line_count, 1);
+        assert_eq!(std::fs::read_to_string(&path).expect("saved"), "hello");
+
+        handle.shutdown();
+        task.join().await;
+        let _ = std::fs::remove_file(path);
+    }
 
     fn find_matches(text: &str, query: &str, case_sensitive: bool) -> Vec<Range<usize>> {
         ferriso_editor::Document::from_text(text).find_matches(query, case_sensitive)

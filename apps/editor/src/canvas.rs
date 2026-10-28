@@ -34,6 +34,8 @@ pub struct DragState {
 pub struct EditorCanvas<'a> {
     pub view: &'a EditorView,
     pub preedit: Option<&'a str>,
+    /// Whether to paint the empty-buffer welcome background.
+    pub welcome: bool,
 }
 
 impl canvas::Program<Message> for EditorCanvas<'_> {
@@ -111,14 +113,7 @@ impl canvas::Program<Message> for EditorCanvas<'_> {
             Point::new(TEXT_LEFT, 0.0),
             Size::new((bounds.width - TEXT_LEFT).max(0.0), bounds.height),
         );
-        let welcome = self.view.path.is_none()
-            && self.view.line_count == 1
-            && self
-                .view
-                .rows
-                .first()
-                .is_some_and(|row| row.runs.is_empty());
-        if welcome {
+        if self.welcome {
             return vec![frame.into_geometry()];
         }
 
@@ -222,14 +217,12 @@ impl canvas::Program<Message> for EditorCanvas<'_> {
                         );
                     });
                 }
-                if x >= TEXT_LEFT && x <= bounds.width {
-                    frame.with_clip(text_area, |frame| {
-                        frame.fill_rectangle(
-                            Point::new(x, y + 1.0),
-                            Size::new(2.0, LINE_HEIGHT - 3.0),
-                            theme::ACCENT,
-                        );
-                    });
+                if x >= TEXT_LEFT && x + 2.0 <= bounds.width {
+                    frame.fill_rectangle(
+                        Point::new(x, y + 1.0),
+                        Size::new(2.0, LINE_HEIGHT - 3.0),
+                        theme::ACCENT,
+                    );
                 }
             }
         }

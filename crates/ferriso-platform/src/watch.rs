@@ -16,6 +16,10 @@ use notify::{
 };
 use tokio::sync::mpsc;
 
+/// Maximum queued events per watch. A full queue drops new notifications
+/// instead of growing without bound.
+const WATCH_CAPACITY: usize = 1024;
+
 /// One normalized filesystem change.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WatchEvent {
@@ -44,9 +48,11 @@ pub trait FileWatcher: Send + Sync + 'static {
     fn watch(&self, path: &Path, recursive: bool) -> Result<Watch, WatchError>;
 }
 
-/// A live watch. Dropping it stops delivery and releases the backend watcher.
+/// A live watch. Event delivery is bounded; when the consumer falls behind,
+/// newer events are dropped instead of growing memory without bound. Dropping
+/// the watch stops delivery and releases the backend watcher.
 pub struct Watch {
-    events: mpsc::UnboundedReceiver<WatchEvent>,
+    events: mpsc::Receiver<WatchEvent>,
     _watcher: Option<notify::RecommendedWatcher>,
 }
 
@@ -83,16 +89,16 @@ impl SystemFileWatcher {
 
 impl FileWatcher for SystemFileWatcher {
     fn watch(&self, path: &Path, recursive: bool) -> Result<Watch, WatchError> {
-        let (sender, events) = mpsc::unbounded_channel();
+        let (sender, events) = mpsc::channel(WATCH_CAPACITY);
         let watcher =
             notify::recommended_watcher(move |result: Result<Event, notify::Error>| match result {
                 Ok(event) => {
                     for event in normalize(event) {
-                        let _ = sender.send(event);
+                        let _ = sender.try_send(event);
                     }
                 }
                 Err(error) => {
-                    let _ = sender.send(WatchEvent::Error(error.to_string()));
+                    let _ = sender.try_send(WatchEvent::Error(error.to_string()));
                 }
             })
             .map_err(WatchError::Backend)?;
@@ -113,7 +119,7 @@ impl FileWatcher for SystemFileWatcher {
 /// active watches.
 #[derive(Debug, Default)]
 pub struct MemoryFileWatcher {
-    senders: Mutex<Vec<mpsc::UnboundedSender<WatchEvent>>>,
+    senders: Mutex<Vec<mpsc::Sender<WatchEvent>>>,
 }
 
 impl MemoryFileWatcher {
@@ -127,13 +133,18 @@ impl MemoryFileWatcher {
         let Ok(mut senders) = self.senders.lock() else {
             return;
         };
-        senders.retain(|sender| sender.send(event.clone()).is_ok());
+        senders.retain(|sender| {
+            !matches!(
+                sender.try_send(event.clone()),
+                Err(mpsc::error::TrySendError::Closed(_))
+            )
+        });
     }
 }
 
 impl FileWatcher for MemoryFileWatcher {
     fn watch(&self, _path: &Path, _recursive: bool) -> Result<Watch, WatchError> {
-        let (sender, events) = mpsc::unbounded_channel();
+        let (sender, events) = mpsc::channel(WATCH_CAPACITY);
         self.senders
             .lock()
             .map_err(|_| WatchError::Poisoned)?

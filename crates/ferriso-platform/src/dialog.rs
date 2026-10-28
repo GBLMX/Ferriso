@@ -1,12 +1,17 @@
 //! Native file and folder pickers with an in-memory test double.
 
-use std::{path::PathBuf, sync::Mutex};
+use std::{
+    error::Error as StdError,
+    fmt,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 /// Pick files and folders through the platform dialog service.
 ///
 /// `None` means the user cancelled or the platform could not present a dialog.
-/// The synchronous system backend may block; run it from a blocking task when
-/// used on an async UI thread.
+/// The synchronous system backend may block; use the async helpers in this
+/// module from an async actor/runtime.
 pub trait FileDialog: Send + Sync + 'static {
     /// Pick one existing file.
     fn pick_file(&self) -> Option<PathBuf>;
@@ -16,6 +21,47 @@ pub trait FileDialog: Send + Sync + 'static {
 
     /// Pick a destination path for saving.
     fn save_file(&self) -> Option<PathBuf>;
+}
+
+/// Failure to run a dialog on a blocking worker.
+#[derive(Debug)]
+pub struct DialogError {
+    source: tokio::task::JoinError,
+}
+
+impl fmt::Display for DialogError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "file dialog task failed: {}", self.source)
+    }
+}
+
+impl StdError for DialogError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        Some(&self.source)
+    }
+}
+
+/// Pick a file on a blocking worker.
+pub async fn pick_file_async(dialog: Arc<dyn FileDialog>) -> Result<Option<PathBuf>, DialogError> {
+    tokio::task::spawn_blocking(move || dialog.pick_file())
+        .await
+        .map_err(|source| DialogError { source })
+}
+
+/// Pick a folder on a blocking worker.
+pub async fn pick_folder_async(
+    dialog: Arc<dyn FileDialog>,
+) -> Result<Option<PathBuf>, DialogError> {
+    tokio::task::spawn_blocking(move || dialog.pick_folder())
+        .await
+        .map_err(|source| DialogError { source })
+}
+
+/// Choose a save destination on a blocking worker.
+pub async fn save_file_async(dialog: Arc<dyn FileDialog>) -> Result<Option<PathBuf>, DialogError> {
+    tokio::task::spawn_blocking(move || dialog.save_file())
+        .await
+        .map_err(|source| DialogError { source })
 }
 
 /// The host desktop dialog through [`rfd`].
@@ -104,5 +150,26 @@ mod tests {
         assert_eq!(dialog.pick_file(), Some(PathBuf::from("/tmp/file")));
         assert_eq!(dialog.pick_folder(), Some(PathBuf::from("/tmp/folder")));
         assert_eq!(dialog.save_file(), Some(PathBuf::from("/tmp/save")));
+    }
+
+    #[tokio::test]
+    async fn async_helpers_run_the_dialog_off_the_caller() {
+        let file: Arc<dyn FileDialog> = Arc::new(MemoryFileDialog::new().with_file("/tmp/file"));
+        let save: Arc<dyn FileDialog> = Arc::new(MemoryFileDialog::new().with_save("/tmp/save"));
+        let folder: Arc<dyn FileDialog> =
+            Arc::new(MemoryFileDialog::new().with_folder("/tmp/folder"));
+        assert_eq!(
+            pick_file_async(file).await.expect("file dialog"),
+            Some(PathBuf::from("/tmp/file"))
+        );
+        assert_eq!(
+            pick_folder_async(folder).await.expect("folder dialog"),
+            Some(PathBuf::from("/tmp/folder"))
+        );
+
+        assert_eq!(
+            save_file_async(save).await.expect("save dialog"),
+            Some(PathBuf::from("/tmp/save"))
+        );
     }
 }

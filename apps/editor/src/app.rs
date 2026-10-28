@@ -50,6 +50,7 @@ pub struct EditorRenderer {
     last_viewport: Option<(usize, usize)>,
     resize_deadline: Option<Instant>,
     last_focus: Option<u64>,
+    welcome_dismissed: bool,
 }
 
 impl EditorRenderer {
@@ -60,6 +61,7 @@ impl EditorRenderer {
             last_viewport: None,
             resize_deadline: None,
             last_focus: None,
+            welcome_dismissed: false,
         }
     }
 
@@ -285,18 +287,24 @@ impl EditorRenderer {
             .into()
     }
 
+    fn show_welcome(&self, view: &EditorSnapshot) -> bool {
+        !self.welcome_dismissed && is_welcome(view)
+    }
+
     fn body<'a>(&'a self, view: &'a EditorSnapshot) -> Element<'a, Message> {
+        let show_welcome = self.show_welcome(view);
         let canvas = ImeCanvas::new(
             EditorCanvas {
                 view: &view.view,
                 preedit: self.preedit.as_deref(),
+                welcome: show_welcome,
             },
             self.ime_cursor(view),
             self.ime_active(view),
         );
         let editor: Element<'_, Message> = container(canvas).style(theme::editor).into();
 
-        if is_welcome(view) {
+        if show_welcome {
             let welcome = container(
                 column![
                     text("FERRISO")
@@ -537,6 +545,15 @@ impl EditorRenderer {
 }
 
 impl Renderer<EditorSnapshot, EditorMessage, EditorLocal> for EditorRenderer {
+    fn on_message(&mut self, message: &EditorMessage) {
+        if matches!(
+            message,
+            EditorMessage::New | EditorMessage::Open | EditorMessage::Insert(_)
+        ) {
+            self.welcome_dismissed = true;
+        }
+    }
+
     fn view<'a>(&'a self, view: &'a EditorSnapshot) -> Element<'a, Message> {
         let header = self.header(view);
         let tabs = self.tab_strip(view);
@@ -800,6 +817,8 @@ fn ime_message(
 
 #[cfg(test)]
 mod tests {
+    use ferriso_core::App;
+
     use super::*;
 
     #[test]
@@ -819,5 +838,17 @@ mod tests {
             key_message(event),
             Some(Message::User(EditorMessage::Find))
         ));
+    }
+
+    #[test]
+    fn new_buffer_dismisses_the_welcome_overlay() {
+        use crate::model::EditorModel;
+
+        let view = EditorModel::new(None).view();
+        let mut renderer = EditorRenderer::new((1200.0, 800.0));
+        assert!(renderer.show_welcome(&view));
+
+        renderer.on_message(&EditorMessage::New);
+        assert!(!renderer.show_welcome(&view));
     }
 }

@@ -9,6 +9,34 @@
   structured artifacts, so the global `--json` flag produces machine-readable
   output instead of formatted text.
 
+- `ferriso-platform`: `pick_file_async`, `pick_folder_async`, and
+  `save_file_async` run any `Arc<dyn FileDialog>` on Tokio's blocking pool and
+  return `DialogError` when the worker fails.
+
+### Fixed
+
+- `ferriso-editor`: `Document::save_as` now writes a same-directory temporary
+  file and renames it into place, so a failed save cannot truncate the previous
+  file. Existing ordinary mode bits are preserved; new Unix files start as
+  `0600`. `Document::open` is bounded at 64 MiB and `open_with_limit` exposes an
+  explicit bound.
+- `apps/editor`: Open, Save, Save As, Save All, and close-save dialogs run as
+  actor commands instead of blocking `update`; dialog results are applied once,
+  duplicate dialogs are suppressed, and Save All resumes one tab at a time.
+  `EditorModel::with_dialog` injects a backend for headless tests.
+- `apps/editor`: opening a real file or a new buffer now shows the caret at
+  column 0; the canvas no longer clips a caret drawn exactly on the text-area
+  edge, and the welcome screen is dismissed by New/Open/typing. The TUI cursor
+  placement has a regression test.
+- `ferriso-diagnostics`: a panicking logger is caught and disabled instead of
+  propagating into the actor.
+- `ferriso-tui`: mouse capture is disabled by a guard when the event loop
+  unwinds; ratatui already restores raw mode and the alternate screen.
+- `ferriso-floem`: the snapshot relay no longer blocks forever on a full
+  bounded channel when `Relay::stop` is called.
+- `ferriso-platform`: file watcher queues are bounded, and system opener child
+  processes are reaped.
+
 ## 0.3.1 - 2026-10-25
 
 ### Fixed

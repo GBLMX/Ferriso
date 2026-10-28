@@ -74,6 +74,13 @@ consumers opt in explicitly. `apps/editor` enables `clipboard` and `dialogs`;
 `apps/yazi-desktop` enables neither and pays only for the standard-library
 opener.
 
+File dialogs keep the object-safe synchronous `FileDialog` trait for test
+doubles and simple callers. Async applications use `pick_file_async`,
+`pick_folder_async`, or `save_file_async`; these run the backend on Tokio's
+blocking pool so an open/save dialog cannot stall actor updates. Cancellation is
+`Ok(None)`. `DialogError` reports a failed blocking worker only, because `rfd`
+does not expose backend errors.
+
 ## Core contract
 
 ```rust
@@ -559,7 +566,11 @@ grapheme-aware cursor movement, renders tabs and wide characters, and supports
 click/drag selection, mouse-wheel scrolling, clipboard, undo/redo, per-tab soft
 wrap, and incremental LSH syntax highlighting. The lsh runtime and generated
 definitions are vendored under `crates/lsh`; the compiler is not a build
-dependency.
+dependency. Saves are staged through a same-directory temporary file and rename;
+existing ordinary permission bits are preserved and new Unix files start as
+`0600`. Atomic replacement changes the inode, so ownership, ACLs, xattrs, and
+hard links are not preserved. The default `Document::open` path rejects files
+above 64 MiB, and `open_with_limit` exposes an explicit bound.
 
 The window is a real tabbed editor: tabs with dirty markers, a new-tab
 button, an empty-buffer welcome screen, a search/replace bar, a status line with
@@ -708,8 +719,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 - `ferriso-config`: layer precedence, required explicit file, unknown-key help,
   preserved config source, and layer listing.
 - `ferriso-platform`: typed opener errors, clipboard round trips, notification
-  recording, dialog selection, normalized memory watch events, a real temp-file
-  watch, and trait-object injection for services.
+  recording, dialog selection plus async blocking-pool helpers, normalized
+  memory watch events, a real temp-file watch, and trait-object injection for
+  services.
 - `ferriso-test`: message delivery, view-predicate waits, actor-close handling,
   clean shutdown, harness-drop cleanup, and shared-actor TUI/iced conformance.
 - `ferriso-tracing`: diagnostics levels and structured fields reach a scoped

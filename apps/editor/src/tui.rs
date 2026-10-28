@@ -853,4 +853,18 @@ mod tests {
         assert!(matches!(outcome, Outcome::Message(EditorMessage::Save)));
         assert!(tui.query.is_empty());
     }
+    #[test]
+    fn empty_buffer_places_the_terminal_cursor() {
+        let model = EditorModel::new(None);
+        let view = model.view();
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).expect("terminal");
+        let mut tui = EditorTui::new();
+        terminal
+            .draw(|frame| tui.draw(&view, frame))
+            .expect("draw editor");
+
+        let position = terminal.get_cursor_position().expect("cursor position");
+        assert!(position.x >= 6, "cursor x was {}", position.x);
+        assert!(position.y >= 2, "cursor y was {}", position.y);
+    }
 }

@@ -18,3 +18,17 @@ jobs:
           sudo apt-get install -y pkg-config libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-dev
       - name: Compatibility smoke
         run: ./scripts/compat-check.sh
+
+  windows-framework:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Windows framework tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test -p ferriso-core -p ferriso-config -p ferriso-diagnostics \
+            -p ferriso-editor -p ferriso-platform -p ferriso-workspace \
+            -p ferriso-keymap -p ferriso-tui -p ferriso-test -p ferriso-editor-app
+          cargo test -p ferriso-platform --no-default-features

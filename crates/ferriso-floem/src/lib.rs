@@ -9,7 +9,14 @@
 //! widget-local state (focus, scroll offsets, text drafts) in Floem signals held
 //! by the renderer, not in the snapshot.
 
-use std::{rc::Rc, sync::Arc, time::Duration};
+use std::{
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use futures::FutureExt;
 
@@ -181,12 +188,14 @@ pub fn run_with<V, M, R>(
 }
 
 struct Relay {
+    stopped: Arc<AtomicBool>,
     stop: Option<futures::channel::oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Relay {
     fn stop(mut self) {
+        self.stopped.store(true, Ordering::SeqCst);
         if let Some(stop) = self.stop.take() {
             let _ = stop.send(());
         }
@@ -198,6 +207,7 @@ impl Relay {
 
 impl Drop for Relay {
     fn drop(&mut self) {
+        self.stopped.store(true, Ordering::SeqCst);
         if let Some(stop) = self.stop.take() {
             let _ = stop.send(());
         }
@@ -212,12 +222,26 @@ where
     V: Send + Sync + 'static,
 {
     let (stop_tx, stop_rx) = futures::channel::oneshot::channel::<()>();
+    let stopped = Arc::new(AtomicBool::new(false));
+    let relay_stopped = stopped.clone();
     let thread = std::thread::spawn(move || {
         futures::executor::block_on(async move {
             let relay = async move {
                 while let Ok(view) = snapshots.changed().await {
-                    if tx.send(view).is_err() {
-                        return false;
+                    let mut pending = view;
+                    loop {
+                        if relay_stopped.load(Ordering::SeqCst) {
+                            return false;
+                        }
+                        match tx.send_timeout(pending, Duration::from_millis(25)) {
+                            Ok(()) => break,
+                            Err(crossbeam_channel::SendTimeoutError::Timeout(view)) => {
+                                pending = view;
+                            }
+                            Err(crossbeam_channel::SendTimeoutError::Disconnected(_)) => {
+                                return false;
+                            }
+                        }
                     }
                 }
                 true
@@ -240,6 +264,7 @@ where
     });
 
     Relay {
+        stopped,
         stop: Some(stop_tx),
         thread: Some(thread),
     }
@@ -273,8 +298,8 @@ mod tests {
             let _enter = runtime.enter();
             ferriso_core::spawn(Counter(0))
         };
-        // Capacity one coalesces bursts: the actor keeps only the latest snapshot,
-        // and the relay blocks instead of letting the UI backlog grow.
+        // Capacity one coalesces bursts. The relay waits with a stop-aware
+        // timeout instead of letting the UI backlog grow indefinitely.
         let (tx, rx) = crossbeam_channel::bounded(1);
         let relay = relay_snapshots(snapshots, tx);
 
@@ -287,5 +312,32 @@ mod tests {
         handle.shutdown();
         runtime.block_on(task.join());
         relay.stop();
+    }
+    #[test]
+    fn relay_stop_finishes_while_the_channel_is_full() {
+        use std::time::Instant;
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (handle, snapshots, task) = {
+            let _enter = runtime.enter();
+            ferriso_core::spawn(Counter(0))
+        };
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        tx.send(Arc::new(0)).expect("fill the relay channel");
+
+        let relay = relay_snapshots(snapshots, tx);
+        handle.send(1);
+        std::thread::sleep(Duration::from_millis(50));
+
+        let started = Instant::now();
+        relay.stop();
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "relay stop must not wait for a full channel"
+        );
+
+        drop(rx);
+        handle.shutdown();
+        runtime.block_on(task.join());
     }
 }

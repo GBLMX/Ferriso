@@ -14,6 +14,9 @@ ferriso-gui = { workspace = true }
 ferriso-platform = { workspace = true, features = ["clipboard", "dialogs"] }
 ferriso-tui = { workspace = true }
 
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "time"] }
+
 [[bin]]
 name = "ferriso-editor"
 path = "src/main.rs"

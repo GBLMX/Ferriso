@@ -28,7 +28,10 @@ mod watch;
 #[cfg(feature = "clipboard")]
 pub use clipboard::{Clipboard, ClipboardError, MemoryClipboard, SystemClipboard};
 #[cfg(feature = "dialogs")]
-pub use dialog::{FileDialog, MemoryFileDialog, SystemFileDialog};
+pub use dialog::{
+    DialogError, FileDialog, MemoryFileDialog, SystemFileDialog, pick_file_async,
+    pick_folder_async, save_file_async,
+};
 #[cfg(feature = "notifications")]
 pub use notifications::{
     MemoryNotifier, Notification, NotificationError, Notifier, SystemNotifier,
@@ -44,6 +47,9 @@ use std::{
 };
 
 /// Open a filesystem path with the platform's default application.
+///
+/// Success means the opener process was launched, not that the target was
+/// successfully opened; the desktop opener does not report that back.
 pub trait Opener: Send + Sync + 'static {
     /// Launch the default application for `target`.
     fn open(&self, target: &Path) -> Result<(), OpenError>;
@@ -66,33 +72,21 @@ impl Opener for SystemOpener {
         {
             let mut command = Command::new("xdg-open");
             command.arg(target);
-            command.spawn().map(|_| ()).map_err(|source| OpenError {
-                target: target.to_path_buf(),
-                program: "xdg-open",
-                source,
-            })
+            spawn_and_reap(command, target, "xdg-open")
         }
 
         #[cfg(target_os = "macos")]
         {
             let mut command = Command::new("open");
             command.arg(target);
-            command.spawn().map(|_| ()).map_err(|source| OpenError {
-                target: target.to_path_buf(),
-                program: "open",
-                source,
-            })
+            spawn_and_reap(command, target, "open")
         }
 
         #[cfg(target_os = "windows")]
         {
             let mut command = Command::new("cmd");
             command.args(["/C", "start", ""]).arg(target);
-            command.spawn().map(|_| ()).map_err(|source| OpenError {
-                target: target.to_path_buf(),
-                program: "cmd",
-                source,
-            })
+            spawn_and_reap(command, target, "cmd")
         }
 
         #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
@@ -108,6 +102,22 @@ impl Opener for SystemOpener {
             })
         }
     }
+}
+
+fn spawn_and_reap(
+    mut command: Command,
+    target: &Path,
+    program: &'static str,
+) -> Result<(), OpenError> {
+    let mut child = command.spawn().map_err(|source| OpenError {
+        target: target.to_path_buf(),
+        program,
+        source,
+    })?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
 }
 
 /// Failure to launch the platform opener.

@@ -83,6 +83,33 @@ impl Default for Options {
     }
 }
 
+/// Mouse capture enabled by the adapter. Ratatui's panic hook restores raw
+/// mode and the alternate screen, but it does not know about crossterm mouse
+/// capture, so this guard owns that extra terminal state.
+struct MouseCapture {
+    active: bool,
+}
+
+impl MouseCapture {
+    fn enable() -> io::Result<Self> {
+        crossterm::execute!(stdout(), EnableMouseCapture)?;
+        Ok(Self { active: true })
+    }
+
+    fn disable(&mut self) {
+        if self.active {
+            let _ = crossterm::execute!(stdout(), DisableMouseCapture);
+            self.active = false;
+        }
+    }
+}
+
+impl Drop for MouseCapture {
+    fn drop(&mut self) {
+        self.disable();
+    }
+}
+
 /// Spawn `app` on a private Tokio runtime and run it on the terminal.
 ///
 /// The runtime, the actor, and the terminal all have the same lifetime. Use
@@ -157,17 +184,22 @@ where
     R: Renderer<A::View, A::Message>,
 {
     let mut terminal = ratatui::try_init()?;
-    if options.mouse
-        && let Err(error) = crossterm::execute!(stdout(), EnableMouseCapture)
-    {
-        let _ = ratatui::try_restore();
-        return Err(error);
-    }
+    let mut mouse = if options.mouse {
+        match MouseCapture::enable() {
+            Ok(capture) => Some(capture),
+            Err(error) => {
+                let _ = ratatui::try_restore();
+                return Err(error);
+            }
+        }
+    } else {
+        None
+    };
 
     let result = event_loop::<A, R>(&mut terminal, renderer, &handle, &snapshots);
 
-    if options.mouse {
-        let _ = crossterm::execute!(stdout(), DisableMouseCapture);
+    if let Some(capture) = mouse.as_mut() {
+        capture.disable();
     }
     let restore = ratatui::try_restore();
     match (result, restore) {

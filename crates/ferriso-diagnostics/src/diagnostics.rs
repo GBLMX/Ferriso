@@ -3,6 +3,7 @@
 use std::{
     collections::VecDeque,
     env, fmt, fs,
+    panic::{AssertUnwindSafe, catch_unwind},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex, RwLock,
@@ -429,11 +430,20 @@ impl Diagnostics {
         let Some(logger) = logger else {
             return;
         };
-        if !logger.enabled(record.level) {
-            return;
+        match catch_unwind(AssertUnwindSafe(|| logger.enabled(record.level))) {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(_) => {
+                self.clear_logger();
+                return;
+            }
         }
 
-        logger.log(record);
+        // A logger is an extension point and may be third-party code. It must
+        // not take down the actor while the actor is already handling an error.
+        if catch_unwind(AssertUnwindSafe(|| logger.log(record))).is_err() {
+            self.clear_logger();
+        }
     }
 }
 
@@ -600,6 +610,34 @@ mod tests {
         assert!(records[1].contains("ERROR"));
     }
 
+    struct PanickingLogger;
+
+    impl Logger for PanickingLogger {
+        fn log(&self, _record: &Record<'_>) {
+            panic!("logger panic");
+        }
+    }
+
+    struct PanickingGate;
+
+    impl Logger for PanickingGate {
+        fn enabled(&self, _level: Level) -> bool {
+            panic!("logger gate panic");
+        }
+
+        fn log(&self, _record: &Record<'_>) {}
+    }
+
+    #[test]
+    fn a_panicking_logger_is_disabled_instead_of_propagating() {
+        let diagnostics = Diagnostics::new().with_logger(Arc::new(PanickingLogger));
+        diagnostics.log(Level::Warn, "test", "log", TaskId::NONE, "warn");
+        assert!(!diagnostics.has_logger());
+
+        let diagnostics = Diagnostics::new().with_logger(Arc::new(PanickingGate));
+        diagnostics.log(Level::Warn, "test", "log", TaskId::NONE, "warn");
+        assert!(!diagnostics.has_logger());
+    }
     #[test]
     fn report_carries_config_help_and_cause() {
         let diagnostics = Diagnostics::new().with_debug(true);

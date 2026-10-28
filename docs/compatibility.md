@@ -34,8 +34,9 @@ window-manager close chord (`Alt+F4`); both applications exited cleanly.
 | Editor TUI | `ferriso-editor-tui README.md` | Rendered `Ferriso`, `README`, and the `Ctrl+Q` status line; exit 0. |
 | Editor iced | `ferriso-editor README.md` | Window opened; close request exited 0. |
 
-The headless release check was `./scripts/compat-check.sh`; the post-release
-suite was `cargo test --workspace` with 219 passing tests across 48 suites.
+The headless release check was `./scripts/compat-check.sh`; the current
+post-change suite is `cargo test --workspace` with 245 passing tests across 49
+suites.
 
 ## What "pass" means
 
@@ -86,6 +87,17 @@ cargo run -p ferriso-editor-app --bin ferriso-editor -- README.md
 the dependency-boundary checks in `scripts/architecture-check.sh`, clippy with
 warnings denied, and the full workspace test suite. The GitHub workflow
 `.github/workflows/compatibility.yml` runs the same script.
+
+The separate `windows-framework` job runs the core/configuration/diagnostics,
+editor, platform, workspace, keymap, TUI, and test-harness suites on
+`windows-latest`, plus the feature-free platform build. A Windows 11 VM run of
+the same framework surface passed 115 tests across twelve executables, including
+the shared TUI/iced conformance test and the async platform dialog helper; the
+editor app test binaries passed 33 Windows app/TUI tests, including the async
+open/save/save-all/close-save dialog flows, synchronous save snapshot refreshes,
+the pending-dialog mutation guard, cursor, and welcome-overlay regressions.
+The feature-free platform binary passed
+its single test. Live window checks remain desktop-only.
 
 `boxpigma` is not a workspace member because it is a downstream consumer. It
 pins Ferriso `55d1745` (0.3.1). To check it against its pinned revision:

@@ -3,11 +3,20 @@
 use std::{
     borrow::Cow,
     collections::VecDeque,
-    fmt, fs,
+    fmt,
+    fs::{self, File, OpenOptions},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
+    process,
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use crate::{gap::GapBuffer, segmented::Segmented};
+
+/// Default maximum file size accepted by [`Document::open`], in bytes.
+pub const DEFAULT_OPEN_LIMIT: u64 = 64 * 1024 * 1024;
+
+static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// The line ending detected when a file was opened.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,10 +90,36 @@ impl Document {
 
     /// Open a UTF-8 file, strip a BOM, normalize line endings, and preserve the
     /// detected newline style for saving.
+    ///
+    /// Files larger than [`DEFAULT_OPEN_LIMIT`] are rejected; use
+    /// [`Document::open_with_limit`] when the application has a different bound.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DocumentError> {
+        Self::open_with_limit(path, DEFAULT_OPEN_LIMIT)
+    }
+
+    /// Open a UTF-8 file with an explicit upper bound in bytes.
+    ///
+    /// The file is never read past `limit + 1` bytes, so a file that grows
+    /// while it is being opened cannot bypass the limit.
+    pub fn open_with_limit(path: impl AsRef<Path>, limit: u64) -> Result<Self, DocumentError> {
         let path = path.as_ref();
-        let bytes =
-            fs::read(path).map_err(|error| DocumentError::new(path, "open", error.to_string()))?;
+        let file = File::open(path)
+            .map_err(|error| DocumentError::new(path, "open", error.to_string()))?;
+        if let Ok(metadata) = file.metadata()
+            && metadata.len() > limit
+        {
+            return Err(too_large(path, limit));
+        }
+
+        let mut bytes = Vec::new();
+        let mut limited = file.take(limit.saturating_add(1));
+        limited
+            .read_to_end(&mut bytes)
+            .map_err(|error| DocumentError::new(path, "read", error.to_string()))?;
+        if bytes.len() as u64 > limit {
+            return Err(too_large(path, limit));
+        }
+
         let (bom, bytes) = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
             (true, &bytes[3..])
         } else {
@@ -115,6 +150,14 @@ impl Document {
     }
 
     /// Save to a specific path.
+    ///
+    /// The write is staged in a temporary file in the destination directory and
+    /// renamed into place, so a failed write does not truncate the old file.
+    /// Existing ordinary permission bits are preserved; on Unix, a new file
+    /// starts as `0600`.
+    ///
+    /// The inode is replaced: ownership, ACLs, xattrs, and hard links are not
+    /// preserved by this atomic-save path.
     pub fn save_as(&self, path: impl AsRef<Path>) -> Result<(), DocumentError> {
         let path = path.as_ref();
         let text = self.text();
@@ -127,7 +170,8 @@ impl Document {
             bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
         }
         bytes.extend_from_slice(text.as_bytes());
-        fs::write(path, bytes).map_err(|error| DocumentError::new(path, "save", error.to_string()))
+        write_atomically(path, &bytes)
+            .map_err(|error| DocumentError::new(path, "save", error.to_string()))
     }
 
     pub fn path(&self) -> Option<&Path> {
@@ -336,6 +380,118 @@ impl Document {
     }
 }
 
+fn too_large(path: &Path, limit: u64) -> DocumentError {
+    DocumentError::new(path, "open", format!("file is larger than {limit} bytes"))
+}
+
+fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let target = resolve_target(path)?;
+    if target.file_name().is_none() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "save path has no file name",
+        ));
+    }
+    let parent = target
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    #[cfg(unix)]
+    let mode = temporary_mode(&target);
+    #[cfg(not(unix))]
+    let mode = 0;
+    let (temporary, mut file) = create_temporary(parent, mode)?;
+
+    let written = (|| -> io::Result<()> {
+        file.write_all(bytes)?;
+        if let Ok(metadata) = fs::metadata(&target) {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+
+                // Writing a file normally clears setuid/setgid bits. Keep the
+                // ordinary permission bits, but do not reintroduce privilege
+                // bits through the atomic replacement.
+                let permissions = fs::Permissions::from_mode(metadata.permissions().mode() & 0o777);
+                file.set_permissions(permissions)?;
+            }
+            #[cfg(not(unix))]
+            file.set_permissions(metadata.permissions())?;
+        }
+        file.sync_all()
+    })();
+    if let Err(error) = written {
+        drop(file);
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
+    drop(file);
+
+    if let Err(error) = fs::rename(&temporary, &target) {
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
+    sync_parent(parent);
+    Ok(())
+}
+
+fn resolve_target(path: &Path) -> io::Result<PathBuf> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => fs::canonicalize(path),
+        Ok(_) => Ok(path.to_path_buf()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(path.to_path_buf()),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(unix)]
+fn temporary_mode(target: &Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::metadata(target)
+        .map(|metadata| metadata.permissions().mode() & 0o777)
+        .unwrap_or(0o600)
+}
+
+fn create_temporary(parent: &Path, mode: u32) -> io::Result<(PathBuf, File)> {
+    #[cfg(not(unix))]
+    let _ = mode;
+
+    for _ in 0..32 {
+        let candidate = parent.join(format!(
+            ".ferriso-save-{}-{}.tmp",
+            process::id(),
+            TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+
+            options.mode(mode);
+        }
+        match options.open(&candidate) {
+            Ok(file) => return Ok((candidate, file)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "could not create a unique temporary file",
+    ))
+}
+
+#[cfg(unix)]
+fn sync_parent(parent: &Path) {
+    if let Ok(directory) = File::open(parent) {
+        let _ = directory.sync_all();
+    }
+}
+
+#[cfg(not(unix))]
+fn sync_parent(_parent: &Path) {}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -487,5 +643,83 @@ mod tests {
         std::fs::write(&path, [0xFF, 0xFE]).expect("write fixture");
         let error = Document::open(&path).expect_err("invalid UTF-8 must fail");
         assert!(error.to_string().contains("decode"));
+    }
+    #[test]
+    fn save_replaces_content_without_leaving_a_temp_file() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("note.txt");
+        fs::write(&path, b"old").expect("write fixture");
+
+        Document::from_text("new")
+            .save_as(&path)
+            .expect("atomic save");
+
+        assert_eq!(fs::read(&path).expect("read"), b"new");
+        assert!(
+            fs::read_dir(dir.path())
+                .expect("read dir")
+                .all(|entry| !entry
+                    .expect("entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".ferriso-save-")),
+            "temporary save file must be removed"
+        );
+    }
+
+    #[test]
+    fn open_rejects_files_above_the_explicit_limit() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("large.txt");
+        fs::write(&path, b"12345").expect("write fixture");
+
+        let rejected = Document::open_with_limit(&path, 4).expect_err("limit must reject");
+        assert!(rejected.to_string().contains("larger than 4 bytes"));
+
+        let accepted = Document::open_with_limit(&path, 5).expect("exact limit is allowed");
+        assert_eq!(accepted.text(), "12345");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_preserves_the_existing_file_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("mode.txt");
+        fs::write(&path, b"old").expect("write fixture");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).expect("set mode");
+
+        Document::from_text("new")
+            .save_as(&path)
+            .expect("atomic save");
+
+        let mode = fs::metadata(&path).expect("metadata").permissions().mode() & 0o777;
+        assert_eq!(mode, 0o640);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn temporary_save_files_start_with_a_private_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("temp dir");
+        let target = dir.path().join("target.txt");
+        fs::write(&target, b"old").expect("write fixture");
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o600)).expect("set mode");
+
+        let mode = temporary_mode(&target);
+        assert_eq!(mode, 0o600);
+        let (temporary, file) = create_temporary(dir.path(), mode).expect("temporary file");
+        assert_eq!(
+            fs::metadata(&temporary)
+                .expect("metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+
+        drop(file);
+        fs::remove_file(temporary).expect("remove temporary");
     }
 }

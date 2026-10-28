@@ -2684,6 +2684,7 @@ dependencies = [
  "ferriso-gui",
  "ferriso-platform",
  "ferriso-tui",
+ "tokio",
 ]
 
 [[package]]

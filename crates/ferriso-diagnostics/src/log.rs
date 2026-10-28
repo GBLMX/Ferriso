@@ -45,6 +45,9 @@ pub struct Record<'a> {
 }
 
 /// Pluggable logging backend.
+///
+/// A panic from `enabled` or `log` is contained by [`crate::Diagnostics`] and
+/// disables that logger instead of propagating into the actor.
 pub trait Logger: Send + Sync + 'static {
     /// Cheap level gate called before a record is built.
     fn enabled(&self, _level: Level) -> bool {
