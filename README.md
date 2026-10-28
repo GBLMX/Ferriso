@@ -210,7 +210,30 @@ ferriso_gui::run_with_app(
     PlayerGui::new(),
     Settings::default(),
 )?;
+
+// Sidecars that need the real actor endpoints run after it starts. The
+// adapter shuts them down before the actor when the UI exits.
+ferriso_tui::run_with_app_services(
+    || Player::new(),
+    |context| {
+        let mut sidecars = ferriso_core::Sidecars::new();
+        let handle = context.handle().clone();
+        sidecars.spawn(async move {
+            // IPC / MPRIS request handlers can send messages here.
+            let _ = handle.send(Message::Tick);
+            // External quit paths call `context.request_exit()` or
+            // `handle.request_exit()`.
+        });
+        sidecars
+    },
+    PlayerTui::new(),
+    Options::default(),
+)?;
 ```
+
+The runnable Unix-socket example is
+`crates/ferriso-tui/examples/sidecar.rs`; the MPRIS/zbus lifecycle sketch is
+[`docs/sidecar.md`](docs/sidecar.md).
 
 One actor can serve several frontends:
 

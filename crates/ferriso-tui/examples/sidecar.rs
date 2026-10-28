@@ -52,13 +52,10 @@ impl App for Counter {
     }
 }
 
-struct Terminal {
-    socket: PathBuf,
-}
+struct Terminal;
 
 impl Renderer<View, Message> for Terminal {
     fn draw(&mut self, view: &View, frame: &mut Frame) {
-        let _ = self.socket.as_path();
         let text = format!(
             "Unix-sidecar dogfood\n\npings: {}\nsocket: {}\n\nsend a line with `nc -U {}`; q quits",
             view.pings,
@@ -137,7 +134,6 @@ fn main() -> io::Result<()> {
             .unwrap_or(Duration::ZERO)
             .as_nanos()
     ));
-    let renderer_socket = socket.clone();
     let build_socket = socket.clone();
 
     ferriso_tui::run_with_app_services(
@@ -146,9 +142,7 @@ fn main() -> io::Result<()> {
             socket: build_socket,
         },
         move |context| start_sidecar(context, socket),
-        Terminal {
-            socket: renderer_socket,
-        },
+        Terminal,
         ferriso_tui::Options::default(),
     )
 }
