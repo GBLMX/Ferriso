@@ -686,7 +686,7 @@ chrome, pane contents, table columns, and stable row ids.
 
 The workspace shares one version. While the project is `0.x`, a minor bump may
 break the contract; patches do not. The current line is `0.3.x`. Boxpigma is a
-same-author downstream fork of pigma, pinned to `55d1745` (0.3.1), so it acts
+same-author downstream fork of pigma, pinned to `6791fa7` (0.3.1), so it acts
 as a controlled compatibility probe rather than independent adoption. See
 [`docs/versioning.md`](docs/versioning.md) for the release and downstream
 matrix.
