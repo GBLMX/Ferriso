@@ -405,6 +405,26 @@ otherwise. The desktop file, icon name, `StartupWMClass`, and
 `APPLICATION_ID` must keep the same value — that is what lets KWin associate the
 Wayland surface with the entry.
 
+## Transparent and blurred windows
+
+`ferriso_gui::Settings` forwards `transparent` and `blur` to iced/winit:
+
+```rust
+let settings = ferriso_gui::Settings {
+    transparent: true,
+    blur: true,
+    ..ferriso_gui::Settings::default()
+};
+```
+
+`transparent` enables an alpha-capable surface and clears the adapter's base
+application background. Widgets that paint opaque backgrounds still cover it,
+so use translucent surfaces where the backdrop should show through.
+`blur` asks the compositor to blur what is behind that surface: macOS and Linux
+Wayland compositors with a background-blur protocol support it, while Windows
+and X11 ignore it. True Windows acrylic needs a platform-specific DWM
+integration, which iced does not provide.
+
 ## What iced owns, and what it does not
 
 Iced owns its window, renderer, widget tree, focus, text cursor, scrolling, and
@@ -667,6 +687,20 @@ predictable RGB gradients, an animated aurora backdrop, a bounded pulse
 envelope for focus/activity, and a moving text shimmer. They write into the
 current ratatui `Buffer`; time is supplied by the application, so effects stay
 deterministic and never wake the core actor.
+
+Text effects are cell-based. Use `art::grapheme_cells` instead of `chars()` so
+wide CJK glyphs, combining marks, and joined emoji keep one style per grapheme
+and advance by their terminal display width:
+
+```rust
+for (cluster, width) in art::grapheme_cells("中e\u{301}") {
+    // style the whole cluster once, then advance `width` cells
+    let _ = (cluster, width);
+}
+```
+
+The framework owns grapheme segmentation and cell widths; the terminal and font
+still decide whether a glyph exists and how it is drawn.
 
 ```rust
 use ferriso_tui::art;

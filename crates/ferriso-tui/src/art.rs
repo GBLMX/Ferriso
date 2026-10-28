@@ -17,6 +17,13 @@
 //! Truecolor is used directly. Terminals that negotiate a smaller palette
 //! downgrade it in their own renderer; keeping the art layer on RGB makes the
 //! effect independent of terminal detection.
+//!
+//! Text effects are cell-based. Use [`grapheme_cells`] when painting wide or
+//! combined Unicode text so one grapheme keeps one style and advances by its
+//! terminal display width.
+
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use ratatui::{
     buffer::Buffer,
@@ -24,6 +31,14 @@ use ratatui::{
     style::{Color, Style},
 };
 
+/// A grapheme cluster and its width in terminal cells.
+///
+/// Combining marks stay attached to their base; emoji joins are kept as one
+/// cluster. A zero width is possible for control or combining-only clusters.
+pub fn grapheme_cells(text: &str) -> impl Iterator<Item = (&str, usize)> + '_ {
+    text.graphemes(true)
+        .map(|cluster| (cluster, UnicodeWidthStr::width(cluster)))
+}
 /// Colors for the terminal artwork.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Palette {
@@ -322,7 +337,11 @@ impl Default for Shimmer {
 }
 
 impl Shimmer {
-    /// Color for `index` in a run of `len` cells at `time`.
+    /// Color for a display-cell offset in a run of `len` cells at `time`.
+    ///
+    /// `index` is a cell offset, not a Unicode scalar index. For text, derive
+    /// offsets from [`grapheme_cells`] so wide and combined glyphs keep the
+    /// highlight aligned with the terminal.
     pub fn color_at(&self, index: usize, len: usize, time: f32) -> Color {
         if len == 0 || !time.is_finite() || self.period <= 0.0 {
             return self.base;
@@ -409,5 +428,16 @@ mod tests {
             buffer.cell((3, 2)).map(|cell| cell.bg),
             Some(aurora.color_at(area, 3, 2))
         );
+    }
+
+    #[test]
+    fn grapheme_cells_preserve_wide_and_joined_clusters() {
+        let cells: Vec<_> = grapheme_cells("a中e\u{301}👩‍👩‍👧").collect();
+        assert_eq!(cells.len(), 4);
+        assert_eq!(cells[0], ("a", 1));
+        assert_eq!(cells[1], ("中", 2));
+        assert_eq!(cells[2], ("e\u{301}", 1));
+        assert_eq!(cells[3].0, "👩‍👩‍👧");
+        assert!(cells[3].1 > 0);
     }
 }

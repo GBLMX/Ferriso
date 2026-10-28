@@ -15,6 +15,7 @@ fn main() -> ferriso_gui::iced::Result {
             size,
             exit_on_close_request: false,
             application_id: "io.github.gblmx.ferriso.editor".into(),
+            ..Settings::default()
         },
     )
 }

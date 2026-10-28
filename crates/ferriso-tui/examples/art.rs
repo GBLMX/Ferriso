@@ -8,7 +8,7 @@ use std::time::Duration;
 use ferriso_core::{App, Command, Subscription};
 use ferriso_tui::{
     Outcome, Renderer,
-    art::{Aurora, Gradient, Palette, Pulse, Shimmer},
+    art::{Aurora, Gradient, Palette, Pulse, Shimmer, grapheme_cells},
     crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers},
     ratatui::{
         Frame,
@@ -88,15 +88,17 @@ impl Renderer<u64, Message> for ArtRenderer {
             highlight: palette.highlight,
         };
         let title = "ADVANCED TERMINAL ART";
+        let title_width = grapheme_cells(title).map(|(_, width)| width).sum();
+        let mut column = 0usize;
         let title = Line::from(
-            title
-                .chars()
-                .enumerate()
-                .map(|(index, ch)| {
-                    Span::styled(
-                        ch.to_string(),
-                        Style::default().fg(shimmer.color_at(index, title.len(), time)),
-                    )
+            grapheme_cells(title)
+                .map(|(cluster, width)| {
+                    let span = Span::styled(
+                        cluster,
+                        Style::default().fg(shimmer.color_at(column, title_width, time)),
+                    );
+                    column += width;
+                    span
                 })
                 .collect::<Vec<_>>(),
         );

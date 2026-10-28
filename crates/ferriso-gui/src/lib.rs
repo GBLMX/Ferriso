@@ -20,7 +20,7 @@ pub mod motion;
 
 use ferriso_core::{App, CoreContext, CoreHandle, Diagnostics, Sidecars, Snapshots};
 use futures::{Stream, stream};
-use iced::{Element, Subscription, Task, Theme};
+use iced::{Color, Element, Subscription, Task, Theme, theme::Base};
 
 pub use iced;
 
@@ -114,6 +114,19 @@ pub trait Renderer<V, M, L = ()> {
 pub struct Settings {
     pub title: String,
     pub size: (f32, f32),
+    /// Whether the window surface may use alpha.
+    ///
+    /// When enabled, the adapter clears iced's base application background to
+    /// transparent. Widgets that paint opaque backgrounds still cover it, so
+    /// translucent surfaces should opt in explicitly.
+    pub transparent: bool,
+    /// Ask the compositor to blur content behind a transparent window.
+    ///
+    /// Only meaningful when [`Settings::transparent`] is enabled.
+    /// This is a platform capability, not a portable effect. It is supported
+    /// on macOS and Linux Wayland compositors that expose a background-blur
+    /// protocol. Windows and X11 currently ignore it.
+    pub blur: bool,
     /// Whether the window manager may close the window directly.
     ///
     /// Set this to `false` when the renderer needs to intercept close
@@ -131,6 +144,8 @@ impl Default for Settings {
         Self {
             title: "Ferriso".into(),
             size: (1100.0, 760.0),
+            transparent: false,
+            blur: false,
             exit_on_close_request: true,
             application_id: APPLICATION_ID.into(),
         }
@@ -142,6 +157,7 @@ struct Frontend<V, M, L, R> {
     handle: CoreHandle<M>,
     renderer: R,
     fallback_title: String,
+    transparent: bool,
     _local: PhantomData<L>,
 }
 
@@ -154,12 +170,14 @@ where
         handle: CoreHandle<M>,
         renderer: R,
         fallback_title: String,
+        transparent: bool,
     ) -> (Self, Task<Message<V, M, L>>) {
         let mut frontend = Self {
             view,
             handle,
             renderer,
             fallback_title,
+            transparent,
             _local: PhantomData,
         };
         let task = frontend.renderer.on_snapshot_task(&frontend.view);
@@ -351,6 +369,8 @@ where
     let boot = Mutex::new(Some((snapshots.current(), handle, renderer)));
     let title = settings.title;
     let size = settings.size;
+    let transparent = settings.transparent;
+    let blur = settings.blur;
     let application_id = settings.application_id;
     let exit_on_close_request = settings.exit_on_close_request;
     let subscription_snapshots = snapshots.clone();
@@ -363,7 +383,7 @@ where
                 .take()
                 .expect("iced booted more than once");
             let fallback_title = title.clone();
-            Frontend::new(view, handle, renderer, fallback_title)
+            Frontend::new(view, handle, renderer, fallback_title, transparent)
         },
         update::<A, L, R>,
         view::<A, L, R>,
@@ -381,12 +401,27 @@ where
         ])
     })
     .theme(|frontend: &Frontend<A::View, A::Message, L, R>| frontend.renderer.theme(&frontend.view))
+    .style(
+        |frontend: &Frontend<A::View, A::Message, L, R>, theme: &Theme| {
+            application_style(frontend.transparent, theme)
+        },
+    )
     .window(window_settings(
         size,
         &application_id,
         exit_on_close_request,
+        transparent,
+        blur,
     ))
     .run()
+}
+
+fn application_style(transparent: bool, theme: &Theme) -> iced::theme::Style {
+    let mut style = theme.base();
+    if transparent {
+        style.background_color = Color::TRANSPARENT;
+    }
+    style
 }
 
 /// Window settings shared by every launch path.
@@ -394,9 +429,13 @@ fn window_settings(
     size: (f32, f32),
     application_id: &str,
     exit_on_close_request: bool,
+    transparent: bool,
+    blur: bool,
 ) -> iced::window::Settings {
     iced::window::Settings {
         size: iced::Size::new(size.0, size.1),
+        transparent,
+        blur,
         exit_on_close_request,
         #[cfg(target_os = "linux")]
         platform_specific: iced::window::settings::PlatformSpecific {
@@ -492,15 +531,32 @@ mod tests {
 
     #[test]
     fn window_settings_apply_the_requested_size() {
-        let settings = window_settings((900.0, 600.0), APPLICATION_ID, true);
+        let settings = window_settings((900.0, 600.0), APPLICATION_ID, true, false, false);
         assert_eq!(settings.size.width, 900.0);
         assert_eq!(settings.size.height, 600.0);
+    }
+
+    #[test]
+    fn transparent_style_clears_the_application_background() {
+        let theme = Theme::Dark;
+        let opaque = application_style(false, &theme);
+        let clear = application_style(true, &theme);
+        assert_eq!(clear.background_color, Color::TRANSPARENT);
+        assert_eq!(clear.text_color, opaque.text_color);
+    }
+
+    #[test]
+    fn window_settings_forward_transparency_and_blur() {
+        let settings = window_settings((900.0, 600.0), APPLICATION_ID, false, true, true);
+        assert!(settings.transparent);
+        assert!(settings.blur);
+        assert!(!settings.exit_on_close_request);
     }
 
     #[cfg(target_os = "linux")]
     #[test]
     fn window_settings_expose_a_stable_application_id() {
-        let settings = window_settings((900.0, 600.0), APPLICATION_ID, true);
+        let settings = window_settings((900.0, 600.0), APPLICATION_ID, true, false, false);
         assert_eq!(settings.platform_specific.application_id, APPLICATION_ID);
     }
 
@@ -552,6 +608,7 @@ mod tests {
             handle,
             Hooked::default(),
             "test".into(),
+            false,
         );
         let _later = frontend.apply_snapshot(Arc::new(1));
 

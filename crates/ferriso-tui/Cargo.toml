@@ -13,6 +13,8 @@ ferriso-keymap = { workspace = true }
 crossterm = { version = "0.29", features = ["event-stream"] }
 futures = "0.3"
 ratatui = { version = "0.30", default-features = false, features = ["crossterm_0_29"] }
+unicode-segmentation = { workspace = true }
+unicode-width = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 
 [dev-dependencies]

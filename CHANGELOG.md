@@ -31,6 +31,12 @@
 - `ferriso-tui::art`: terminal-native gradients, animated aurora background,
   bounded pulse envelope, and moving text shimmer, all driven by caller-supplied
   time.
+- `ferriso-gui::Settings`: `transparent` and `blur` are forwarded to iced/winit;
+  transparent mode also clears the base application background. Blur depends on
+  macOS or a Wayland compositor with a background-blur protocol.
+- `ferriso-tui::art::grapheme_cells`: splits text into grapheme clusters with
+  terminal display widths, so shimmer and other cell effects keep wide CJK and
+  combined Unicode text aligned.
 - `ferriso-editor`: re-export `DEFAULT_OPEN_LIMIT` so the public `Document::open`
   bound is linkable and discoverable.
 
