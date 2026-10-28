@@ -5,8 +5,9 @@ cd "$(dirname "$0")/.."
 
 cargo fmt --all -- --check
 ./scripts/architecture-check.sh
-cargo clippy --workspace --all-targets -- -D warnings
-cargo clippy -p ferriso-platform --no-default-features --all-targets -- -D warnings
-cargo test --workspace
-cargo test -p ferriso-platform --no-default-features
-cargo check --workspace --all-targets
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --lib --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo clippy -p ferriso-platform --no-default-features --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+cargo test -p ferriso-platform --no-default-features --locked
+cargo check --workspace --all-targets --locked

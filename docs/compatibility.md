@@ -35,7 +35,7 @@ window-manager close chord (`Alt+F4`); both applications exited cleanly.
 | Editor iced | `ferriso-editor README.md` | Window opened; close request exited 0. |
 
 The headless release check was `./scripts/compat-check.sh`; the current
-post-change suite is `cargo test --workspace` with 245 passing tests across 49
+post-change suite is `cargo test --workspace` with 258 passing tests across 49
 suites.
 
 ## What "pass" means

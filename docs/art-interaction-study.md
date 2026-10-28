@@ -55,6 +55,12 @@ stay small composable layers rather than a mandatory widget catalog.
 - **`art::Gauge`** — a bounded circular progress arc with center and caption
   text. It fits download/install/import states and countdowns; it does not own
   the state machine.
+- **`art::Pulse`** — concentric rings driven by a normalized phase for focus,
+  activity, and live beacons. It is an effect, not a state machine.
+- **`motion::{Easing, Animation}`** — small renderer-local easing and timeline
+  primitives for short transitions. They do not schedule frames, own application
+  state, or wake the actor; applications advance them from their own frame
+  subscription.
 - Existing **aurora** (atmosphere), **orbit** (composition), skins, surfaces,
   chips, and key hints remain the base layer.
 

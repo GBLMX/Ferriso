@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use ferriso_gui::art::{self, Aurora, Palette as ArtPalette};
+use ferriso_gui::art::{self, Aurora, Palette as ArtPalette, Pulse};
 use ferriso_gui::design::{self, ButtonKind, Skin, Surface, Tokens};
 use ferriso_gui::iced::{
     self, Alignment, Background, Border, Color, Element, Font, Length, Size, Subscription, Task,
@@ -18,6 +18,7 @@ use ferriso_gui::iced::{
 use ferriso_gui::interaction::{
     Command, CommandPalette, PaletteEvent, PaletteKey, ToastTone, Toasts,
 };
+use ferriso_gui::motion::{Animation, Easing};
 
 fn main() -> iced::Result {
     iced::application(Gallery::boot, Gallery::update, Gallery::view)
@@ -150,6 +151,7 @@ struct Gallery {
     style: Style,
     skin: Skin,
     time: f32,
+    pulse: Animation,
     palette_open: bool,
     palette: CommandPalette<Action>,
     toasts: Toasts,
@@ -193,6 +195,7 @@ impl Gallery {
             style,
             skin: style.skin(),
             time: 0.0,
+            pulse: Animation::new(Duration::from_millis(1800)),
             palette_open: false,
             palette,
             toasts,
@@ -203,6 +206,9 @@ impl Gallery {
         match message {
             GalleryMessage::Frame => {
                 self.time = (self.time + 0.033) % 4096.0;
+                if self.pulse.advance(Duration::from_millis(33)) {
+                    self.pulse.reset();
+                }
             }
             GalleryMessage::Tick => {
                 self.toasts.tick(Duration::from_millis(250));
@@ -705,6 +711,12 @@ impl Gallery {
             label_color: tokens.muted,
             thickness: 7.0,
         };
+        let pulse = Pulse {
+            color: tokens.accent,
+            progress: self.pulse.eased(Easing::EaseOutCubic),
+            rings: 4,
+            width: 1.2,
+        };
 
         container(
             column![
@@ -718,9 +730,12 @@ impl Gallery {
                     container(art::orbit(orbit))
                         .width(Length::Fill)
                         .height(Length::Fixed(170.0)),
-                    container(art::gauge(gauge))
-                        .width(Length::Fixed(112.0))
-                        .height(Length::Fixed(170.0)),
+                    container(Stack::with_children([
+                        art::pulse(pulse),
+                        container(art::gauge(gauge)).padding(10).into(),
+                    ]))
+                    .width(Length::Fixed(112.0))
+                    .height(Length::Fixed(170.0)),
                 ]
                 .spacing(10)
                 .align_y(Alignment::Center),

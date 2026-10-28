@@ -619,9 +619,10 @@ frontends; the adapter does not steal it for a hardcoded exit.
 ### Design gallery
 
 `ferriso-gui` ships reusable artwork, skins, and interaction templates: the WGSL
-aurora backdrop, the canvas orbit chart, live bar strips and a progress gauge,
-tokenized surfaces and controls, a fuzzy command palette, a searchable combobox,
-and a bounded toast stack. The design gallery combines the artwork, palette, and
+aurora backdrop, animated pulse rings, the canvas orbit chart, live bar strips
+and a progress gauge, renderer-local easing and timeline primitives, tokenized
+surfaces and controls, a fuzzy command palette, a searchable combobox, and a
+bounded toast stack. The design gallery combines the artwork, palette, and
 toasts in one native window and switches between
 Ferriso, YAZI, Windows 11, macOS, Windows 95, Mac OS Classic, CDE/Motif, and
 Ember skins. Corner radius, border weight, bevels, surface opacity, and accent
@@ -635,9 +636,10 @@ cargo run -p ferriso-gui --example design-gallery
 `PageUp`/`PageDown` move by a page; `Enter` activates and `Esc` dismisses. A
 scattered query such as `srf` still finds “Run surface audit”. Use the `STYLE`
 row to switch skins. The buttons demonstrate solid, soft, and ghost treatments;
-the notifications demonstrate success and warning toasts. The bar strip, gauge,
-aurora, and orbit use the renderer-local clock and never wake the core actor.
-The art and interaction rationale is in
+the notifications demonstrate success and warning toasts. A pulse timeline
+drives the beacon rings; the bar strip, gauge, aurora, and orbit use the
+renderer-local clock and never wake the core actor. The art and interaction
+rationale is in
 [`docs/art-interaction-study.md`](docs/art-interaction-study.md).
 
 ### Workspace gallery

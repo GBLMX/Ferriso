@@ -12,6 +12,6 @@ mod highlight;
 mod segmented;
 mod view;
 
-pub use document::{Document, DocumentError, LineEnding};
+pub use document::{DEFAULT_OPEN_LIMIT, Document, DocumentError, LineEnding};
 pub use editor::Editor;
 pub use view::{EditorView, TokenKind, VisualLine, VisualRun};

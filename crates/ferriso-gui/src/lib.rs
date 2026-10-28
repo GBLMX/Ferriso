@@ -16,6 +16,7 @@ pub mod art;
 pub mod design;
 pub mod interaction;
 pub mod keymap;
+pub mod motion;
 
 use ferriso_core::{App, CoreHandle, Diagnostics, Snapshots};
 use futures::{Stream, stream};

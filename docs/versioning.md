@@ -33,8 +33,10 @@ remain available for older 0.1/0.2 consumers that have not migrated yet.
 
 ## Release checklist
 
-1. `./scripts/compat-check.sh` — formatting, architecture boundaries, clippy,
-   the full workspace tests, and the feature-free platform build.
+1. `./scripts/compat-check.sh` — formatting, locked dependency resolution,
+   architecture boundaries, warning-free rustdoc, clippy, the full workspace
+   tests, and the feature-free platform build. CI also checks the declared
+   `rust-version = "1.88"` with a locked workspace check.
 2. Live TUI/iced checks listed in `docs/compatibility.md`
 3. Update this file, `docs/compatibility.md`, and `CHANGELOG.md`
 4. Bump the workspace version and update downstream pins deliberately

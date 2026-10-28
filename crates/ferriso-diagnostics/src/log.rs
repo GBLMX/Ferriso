@@ -37,7 +37,7 @@ pub struct Record<'a> {
     /// Lifecycle phase, e.g. `init`, `update`, `command`, `config`.
     pub phase: &'a str,
     pub task: TaskId,
-    /// Human message. For errors, this is [`Error::message`].
+    /// Human message. For errors, this is the error's display text.
     pub message: &'a str,
     /// The full error, when this record reports a failure.
     pub error: Option<&'a dyn DiagnosticError>,

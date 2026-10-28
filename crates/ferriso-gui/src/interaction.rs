@@ -188,8 +188,7 @@ impl<K> CommandPalette<K> {
             self.selected = 0;
             return;
         }
-        let current = self.selected.min(len - 1) as isize;
-        self.selected = (current + delta).rem_euclid(len as isize) as usize;
+        self.selected = wrapped_position(self.selected, len, delta);
     }
 
     /// Apply a keyboard intent.
@@ -476,6 +475,17 @@ impl<T> ComboOption<T> {
     }
 }
 
+/// Move `position` by `delta` inside `0..len`, wrapping without integer
+/// overflow for extreme caller-supplied deltas.
+fn wrapped_position(position: usize, len: usize, delta: isize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    let position = position.min(len - 1) as i128;
+    let len = len as i128;
+    ((position + delta as i128).rem_euclid(len)) as usize
+}
+
 /// Keyboard intent understood by [`Combobox`].
 ///
 /// Character input belongs to the combobox's text field, not to this enum.
@@ -584,6 +594,7 @@ impl<T> Combobox<T> {
 
     /// Replace the option list, preserving a valid selection and highlight.
     pub fn set_options(&mut self, options: impl IntoIterator<Item = ComboOption<T>>) {
+        let previous_highlight = self.highlighted_index();
         self.options = options.into_iter().collect();
         if self
             .selected
@@ -595,7 +606,13 @@ impl<T> Combobox<T> {
             self.close();
             return;
         }
-        self.highlighted = self.first_enabled_position();
+        self.highlighted = previous_highlight
+            .and_then(|index| {
+                self.filtered_indices()
+                    .iter()
+                    .position(|candidate| *candidate == index && !self.options[*candidate].disabled)
+            })
+            .unwrap_or_else(|| self.first_enabled_position());
     }
 
     /// Whether the menu is open.
@@ -725,7 +742,7 @@ impl<T> Combobox<T> {
         let len = filtered.len();
         let mut position = self.highlighted.min(len - 1);
         for _ in 0..len {
-            position = (position as isize + delta).rem_euclid(len as isize) as usize;
+            position = wrapped_position(position, len, delta);
             if !self.options[filtered[position]].disabled {
                 self.highlighted = position;
                 return;
@@ -1220,6 +1237,32 @@ mod tests {
         assert_eq!(combo.highlighted_index(), Some(3));
         assert_eq!(combo.handle_key(ComboKey::First), ComboEvent::Changed);
         assert_eq!(combo.highlighted_index(), Some(0));
+    }
+
+    #[test]
+    fn combobox_set_options_preserves_a_valid_highlight() {
+        let mut combo = combobox();
+        combo.open();
+        combo.handle_key(ComboKey::Next);
+        assert_eq!(combo.highlighted_index(), Some(1));
+
+        let options = combo.options().to_vec();
+        combo.set_options(options);
+        assert_eq!(combo.highlighted_index(), Some(1));
+    }
+
+    #[test]
+    fn navigation_handles_extreme_deltas_without_overflow() {
+        let mut palette = palette();
+        palette.handle_key(PaletteKey::Next);
+        palette.move_selection(isize::MAX);
+        assert!(palette.selected().is_some());
+
+        let mut combo = combobox();
+        combo.open();
+        combo.handle_key(ComboKey::Next);
+        combo.move_highlight(isize::MAX);
+        assert!(combo.highlighted_index().is_some());
     }
 
     #[test]

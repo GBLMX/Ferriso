@@ -12,6 +12,18 @@
 - `ferriso-platform`: `pick_file_async`, `pick_folder_async`, and
   `save_file_async` run any `Arc<dyn FileDialog>` on Tokio's blocking pool and
   return `DialogError` when the worker fails.
+- `ferriso-gui::motion`: renderer-local easing curves and a clamped
+  `Animation` timeline for short transitions.
+- `ferriso-gui::art::Pulse`: animated concentric pulse rings for focus,
+  activity, and live beacons, demonstrated in the design gallery.
+- `ferriso-editor`: re-export `DEFAULT_OPEN_LIMIT` so the public `Document::open`
+  bound is linkable and discoverable.
+
+### Documented
+
+- Documentation builds with warnings denied; the compatibility script and CI
+  use `--locked` resolution and check rustdoc before tests.
+- CI now checks the declared Rust 1.88 MSRV with a locked workspace check.
 
 ### Fixed
 
@@ -36,6 +48,12 @@
   bounded channel when `Relay::stop` is called.
 - `ferriso-platform`: file watcher queues are bounded, and system opener child
   processes are reaped.
+- `ferriso-gui`: palette and combobox navigation now wraps with `i128` arithmetic
+  so extreme caller-supplied deltas cannot overflow; `Combobox::set_options`
+  preserves a still-valid highlight, and art primitives treat non-finite
+  samples, progress, gaps, and radii as bounded fallbacks.
+- `ferriso-editor` and `ferriso-diagnostics`: repaired broken rustdoc
+  intra-doc links.
 
 ## 0.3.1 - 2026-10-25
 

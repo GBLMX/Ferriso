@@ -87,7 +87,8 @@ pub struct TuiConfig {
     /// Retained for configuration compatibility.
     ///
     /// The built-in terminal loop is event-driven, so this value no longer
-    /// controls latency; it is still validated and passed to [`Options`].
+    /// controls latency; it is still validated and passed to
+    /// [`ferriso_tui::Options`].
     pub poll_ms: u64,
 }
 

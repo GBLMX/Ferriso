@@ -1,5 +1,5 @@
-//! Advanced iced artwork: a WGSL aurora backdrop and canvas charts (orbit,
-//! bars, and gauge).
+//! Advanced iced artwork: a WGSL aurora backdrop, animated pulse rings, and
+//! canvas charts (orbit, bars, and gauge).
 //!
 //! The shader is a full-window animated atmosphere. It is deliberately a
 //! [`shader::Program`] rather than a static gradient: applications can drive
@@ -78,6 +78,10 @@ impl Palette {
     };
 }
 
+fn finite_or(value: f32, fallback: f32) -> f32 {
+    if value.is_finite() { value } else { fallback }
+}
+
 /// An animated aurora backdrop.
 #[derive(Debug, Clone, Copy)]
 pub struct Aurora {
@@ -100,9 +104,9 @@ impl<Message> shader::Program<Message> for Aurora {
         _bounds: Rectangle,
     ) -> Self::Primitive {
         AuroraPrimitive {
-            time: self.time,
+            time: finite_or(self.time, 0.0),
             palette: self.palette,
-            intensity: self.intensity.clamp(0.0, 1.0),
+            intensity: finite_or(self.intensity, 0.0).clamp(0.0, 1.0),
         }
     }
 }
@@ -279,7 +283,7 @@ fn linear(color: Color, alpha: f32) -> [f32; 4] {
 /// One slice of an [`Orbit`] composition.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OrbitSegment {
-    /// Relative weight. Values at or below zero are skipped.
+    /// Relative weight. Finite values at or below zero are skipped.
     pub value: f32,
     /// Slice color.
     pub color: Color,
@@ -343,11 +347,11 @@ impl Default for Orbit {
 }
 
 impl Orbit {
-    /// Sum of all positive segment weights.
+    /// Sum of all finite positive segment weights.
     pub fn total(&self) -> f32 {
         self.segments
             .iter()
-            .map(|segment| segment.value.max(0.0))
+            .map(|segment| finite_or(segment.value, 0.0).max(0.0))
             .sum()
     }
 }
@@ -383,11 +387,13 @@ impl<Message> canvas::Program<Message> for Orbit {
             );
         }
 
-        let mut angle = -std::f32::consts::FRAC_PI_2 + self.time * 0.18;
+        let time = finite_or(self.time, 0.0);
+        let gap = finite_or(self.gap, 0.03).clamp(0.0, 0.4);
+        let mut angle = -std::f32::consts::FRAC_PI_2 + time * 0.18;
         for segment in &self.segments {
-            let ratio = segment.value.max(0.0) / total;
+            let ratio = finite_or(segment.value, 0.0).max(0.0) / total;
             if ratio > 0.0 {
-                let sweep = (ratio * tau - self.gap.clamp(0.0, 0.4)).max(0.01);
+                let sweep = (ratio * tau - gap).max(0.01);
                 let path = ring_sector(center, inner, radius, angle, angle + sweep);
                 frame.fill(&path, segment.color);
             }
@@ -472,10 +478,10 @@ fn polar(center: Point, radius: f32, angle: f32) -> Point {
 
 /// A compact bar chart for time-series or spectrum data.
 ///
-/// Values are drawn left to right. Negative values are treated as zero; the
-/// caller owns sampling, windowing, and the update clock. This is the small
-/// visual primitive shared by network monitors, audio meters, and launcher
-/// activity strips; it is not a plotting library.
+/// Values are drawn left to right. Negative and non-finite values are treated
+/// as zero; the caller owns sampling, windowing, and the update clock. This is
+/// the small visual primitive shared by network monitors, audio meters, and
+/// launcher activity strips; it is not a plotting library.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bars {
     /// Sample values in display order.
@@ -509,17 +515,20 @@ impl Default for Bars {
 }
 
 impl Bars {
-    /// Largest positive sample, or `0.0` for an empty/all-negative series.
+    /// Largest finite positive sample, or `0.0` for an empty/all-negative series.
     pub fn peak(&self) -> f32 {
-        self.values
-            .iter()
-            .copied()
-            .fold(0.0_f32, |peak, value| peak.max(value))
+        self.values.iter().copied().fold(0.0_f32, |peak, value| {
+            if value.is_finite() {
+                peak.max(value)
+            } else {
+                peak
+            }
+        })
     }
 
     fn scale(&self) -> f32 {
         self.max
-            .filter(|max| *max > 0.0)
+            .filter(|max| max.is_finite() && *max > 0.0)
             .unwrap_or_else(|| self.peak().max(0.000_001))
     }
 }
@@ -551,18 +560,21 @@ impl<Message> canvas::Program<Message> for Bars {
 
         let scale = self.scale();
         let slot = bounds.width / self.values.len() as f32;
-        let gap = self.gap.clamp(0.0, slot * 0.6);
+        let gap = finite_or(self.gap, 2.0).clamp(0.0, slot * 0.6);
         let bar_width = (slot - gap).max(1.0).min(slot);
 
         for (index, value) in self.values.iter().copied().enumerate() {
-            let ratio = (value.max(0.0) / scale).clamp(0.0, 1.0);
+            let value = finite_or(value, 0.0).max(0.0);
+            let ratio = (value / scale).clamp(0.0, 1.0);
             let height = bounds.height * ratio;
             if height <= 0.0 {
                 continue;
             }
 
             let x = index as f32 * slot + (slot - bar_width) * 0.5;
-            let radius = self.radius.clamp(0.0, bar_width * 0.5).min(height * 0.5);
+            let radius = finite_or(self.radius, 0.0)
+                .clamp(0.0, bar_width * 0.5)
+                .min(height * 0.5);
             let path = canvas::Path::rounded_rectangle(
                 Point::new(x, bounds.height - height),
                 Size::new(bar_width, height),
@@ -629,9 +641,13 @@ impl Default for Gauge {
 }
 
 impl Gauge {
-    /// Clamped progress.
+    /// Clamped progress; NaN is treated as zero.
     pub fn progress(&self) -> f32 {
-        self.value.clamp(0.0, 1.0)
+        if self.value.is_nan() {
+            0.0
+        } else {
+            self.value.clamp(0.0, 1.0)
+        }
     }
 }
 
@@ -649,7 +665,7 @@ impl<Message> canvas::Program<Message> for Gauge {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
         let center = frame.center();
         let outer = (bounds.width.min(bounds.height) * 0.5 - 4.0).max(12.0);
-        let thickness = self.thickness.clamp(2.0, outer * 0.35);
+        let thickness = finite_or(self.thickness, 10.0).clamp(2.0, outer * 0.35);
         let radius = (outer - thickness * 0.5).max(2.0);
         let progress = self.progress();
         let start = -std::f32::consts::FRAC_PI_2;
@@ -721,6 +737,92 @@ pub fn gauge<'a, Message: 'a>(gauge: Gauge) -> iced::Element<'a, Message> {
         .into()
 }
 
+/// Animated concentric pulse rings for focus, activity, or a live beacon.
+///
+/// `progress` is the normalized phase; values outside `0.0..=1.0` and
+/// non-finite values are bounded. Drive it from a renderer-local clock.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Pulse {
+    /// Ring color.
+    pub color: Color,
+    /// Normalized animation phase.
+    pub progress: f32,
+    /// Number of visible rings, clamped to `1..=12`.
+    pub rings: u8,
+    /// Stroke width in logical pixels.
+    pub width: f32,
+}
+
+impl Default for Pulse {
+    fn default() -> Self {
+        Self {
+            color: Color::WHITE,
+            progress: 0.0,
+            rings: 3,
+            width: 1.5,
+        }
+    }
+}
+
+impl Pulse {
+    fn phase(&self) -> f32 {
+        finite_or(self.progress, 0.0).clamp(0.0, 1.0)
+    }
+}
+
+impl<Message> canvas::Program<Message> for Pulse {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &iced::Renderer,
+        _theme: &iced::Theme,
+        bounds: Rectangle,
+        _cursor: iced::mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+        let center = frame.center();
+        let outer = (bounds.width.min(bounds.height) * 0.5 - 4.0).max(8.0);
+        let progress = self.phase();
+        let rings = self.rings.clamp(1, 12);
+        let width = finite_or(self.width, 1.5).clamp(0.5, 6.0);
+
+        for ring in 0..rings {
+            let phase = (progress + f32::from(ring) / f32::from(rings)).fract();
+            let radius = outer * (0.18 + 0.82 * phase);
+            let alpha = self.color.a * (1.0 - phase).powi(2) * 0.65;
+            frame.stroke(
+                &canvas::Path::circle(center, radius),
+                canvas::Stroke::<'_>::default()
+                    .with_color(Color {
+                        a: alpha,
+                        ..self.color
+                    })
+                    .with_width(width),
+            );
+        }
+
+        frame.fill(
+            &canvas::Path::circle(center, (outer * 0.05).max(1.0)),
+            Color {
+                a: self.color.a * 0.8,
+                ..self.color
+            },
+        );
+
+        vec![frame.into_geometry()]
+    }
+}
+
+/// Build a full-size pulse layer.
+pub fn pulse<'a, Message: 'a>(pulse: Pulse) -> iced::Element<'a, Message> {
+    canvas::Canvas::new(pulse)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
 fn arc_path(center: Point, radius: f32, start: f32, end: f32) -> canvas::Path {
     canvas::Path::new(|builder| {
         builder.arc(canvas::path::Arc {
@@ -781,5 +883,85 @@ mod art_tests {
             ..Gauge::default()
         };
         assert_eq!(gauge.progress(), 1.0);
+    }
+
+    #[test]
+    fn orbit_total_ignores_non_finite_weights() {
+        let orbit = Orbit {
+            segments: vec![
+                OrbitSegment::new(f32::NAN, Color::WHITE),
+                OrbitSegment::new(f32::INFINITY, Color::WHITE),
+                OrbitSegment::new(-1.0, Color::WHITE),
+                OrbitSegment::new(2.0, Color::WHITE),
+            ],
+            ..Orbit::default()
+        };
+        assert_eq!(orbit.total(), 2.0);
+    }
+
+    #[test]
+    fn bars_peak_ignores_non_finite_samples() {
+        let bars = Bars {
+            values: vec![f32::NAN, f32::INFINITY, -4.0, 3.5],
+            ..Bars::default()
+        };
+        assert_eq!(bars.peak(), 3.5);
+    }
+
+    #[test]
+    fn bars_scale_ignores_a_non_finite_maximum() {
+        let bars = Bars {
+            values: vec![2.0],
+            max: Some(f32::INFINITY),
+            ..Bars::default()
+        };
+        assert_eq!(bars.scale(), 2.0);
+    }
+
+    #[test]
+    fn gauge_nan_progress_is_zero() {
+        let gauge = Gauge {
+            value: f32::NAN,
+            ..Gauge::default()
+        };
+        assert_eq!(gauge.progress(), 0.0);
+    }
+
+    #[test]
+    fn aurora_sanitizes_non_finite_inputs() {
+        let aurora = Aurora {
+            time: f32::INFINITY,
+            palette: Palette::FERRISO,
+            intensity: f32::NAN,
+        };
+        let primitive = <Aurora as shader::Program<()>>::draw(
+            &aurora,
+            &(),
+            iced::mouse::Cursor::Unavailable,
+            Rectangle::default(),
+        );
+        assert!(primitive.time.is_finite());
+        assert!(primitive.intensity.is_finite());
+    }
+
+    #[test]
+    fn pulse_bounds_progress_and_non_finite_input() {
+        assert_eq!(Pulse::default().phase(), 0.0);
+        assert_eq!(
+            Pulse {
+                progress: f32::NAN,
+                ..Pulse::default()
+            }
+            .phase(),
+            0.0
+        );
+        assert_eq!(
+            Pulse {
+                progress: 1.4,
+                ..Pulse::default()
+            }
+            .phase(),
+            1.0
+        );
     }
 }
