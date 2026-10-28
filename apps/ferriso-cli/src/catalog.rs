@@ -167,6 +167,12 @@ pub(crate) const APPS: &[AppInfo] = &[
         role: "framework catalog and toolchain diagnostics",
     },
     AppInfo {
+        name: "terminal",
+        package: "ferriso-terminal",
+        frontends: "iced",
+        role: "rio-vt PTY terminal with an iced cell renderer",
+    },
+    AppInfo {
         name: "editor",
         package: "ferriso-editor-app",
         frontends: "TUI + iced",
@@ -211,7 +217,7 @@ mod tests {
 
     #[test]
     fn catalog_includes_the_new_apps() {
-        for name in ["data-workbench", "ferriso-cli"] {
+        for name in ["data-workbench", "terminal", "ferriso-cli"] {
             assert!(
                 APPS.iter().any(|app| app.name == name),
                 "missing app catalog entry: {name}"

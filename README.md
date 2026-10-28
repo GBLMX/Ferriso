@@ -56,6 +56,7 @@ application, and never shares a widget tree with another frontend.
 | `apps/ferriso-cli` | Clawless-based `ferriso` command: framework version, crate/app catalog, and toolchain doctor | `clawless`, serde |
 | `apps/player` | Practice app: one model + view model, independent terminal and iced views | core, config, keymap, tui, iced |
 | `apps/data-workbench` | 100k-row Modrinth-like project catalog dogfooding the shared table model in terminal and iced views | core, workspace, tui, gui |
+| `apps/terminal` | Embedded terminal prototype: `rio-vt` PTY/grid with an iced cell renderer and window adaptation | core, gui, `rio-vt` |
 | `apps/yazi-desktop` | File manager proving the contract with layered config, terminal list/preview, orbit canvas, aurora shader, debug overlay | core, config, platform, gui, tui, diagnostics |
 | `apps/editor` | Tabbed editor over one actor-owned model: native iced canvas and ratatui views, soft wrap, search/replace, IME preedit, save guards, syntax highlighting | core, editor, gui, tui, platform |
 | `apps/twozero48` | Animated GUI-only 2048 probe using the upstream `twozero48` board rules | core, gui, keymap, `twozero48`, `rand` |
@@ -692,7 +693,7 @@ Clawless owns argument parsing, async command execution, and presentation. The
 catalog commands emit structured artifacts, so `--json` is a stable machine
 surface; `doctor` checks the local `rustc`/`cargo` against the workspace MSRV.
 
-The app catalog includes the CLI itself and `data-workbench`; the
+The app catalog includes the CLI itself, `data-workbench`, and `terminal`; the
 `catalog_includes_the_new_apps` test guards against new apps being omitted.
 
 ## Tests

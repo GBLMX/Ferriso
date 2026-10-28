@@ -24,7 +24,7 @@ revision are consuming a snapshot of the contract, not a released version.
 
 | Consumer | Ferriso revision | Version line | Verified paths |
 | --- | --- | --- | --- |
-| workspace apps | HEAD | 0.3.x | core/adapters tests; player, data-workbench, editor, yazi-desktop TUI and iced builds; twozero48 iced build; ferriso-cli catalog tests |
+| workspace apps | HEAD | 0.3.x | core/adapters tests; player, data-workbench, editor, yazi-desktop TUI and iced builds; terminal iced build; twozero48 iced build; ferriso-cli catalog tests |
 | `boxpigma` | `55d1745` | 0.3.1 | workspace tests, TUI launch/render/quit, iced window open/close |
 
 `boxpigma` is a same-author downstream fork of pigma. It now consumes the 0.3.1

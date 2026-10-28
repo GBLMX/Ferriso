@@ -1,0 +1,21 @@
+[package]
+name = "ferriso-terminal"
+description = "Embedded terminal prototype using rio-vt and iced."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ferriso-core = { workspace = true }
+ferriso-gui = { workspace = true }
+rio-vt = "0.5.28"
+
+[lib]
+name = "ferriso_terminal"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ferriso-terminal"
+path = "src/main.rs"

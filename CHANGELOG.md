@@ -13,6 +13,9 @@
   built on `ferriso-workspace::TableState`, with responsive viewports and
   shared filtering/selection across both frontends.
 
+- `apps/terminal`: an app-local embedded terminal prototype using `rio-vt` for
+  PTY/VT/grid state and an iced cell renderer, with resize and IME support.
+
 - `ferriso-platform`: `pick_file_async`, `pick_folder_async`, and
   `save_file_async` run any `Arc<dyn FileDialog>` on Tokio's blocking pool and
   return `DialogError` when the worker fails.

@@ -16,6 +16,7 @@ members = [
     "crates/lsh",
     "apps/player",
     "apps/data-workbench",
+    "apps/terminal",
     "apps/yazi-desktop",
     "apps/editor",
     "apps/twozero48",

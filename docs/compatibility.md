@@ -9,6 +9,7 @@ Compilation plus the core interaction path is the bar; feature parity is not.
 | --- | --- | --- | --- | --- |
 | `apps/player` | ✅ | ✅ | ✅ | TUI launches and quits with `Ctrl+Q`; iced builds against the same `Player` view model. |
 | `apps/data-workbench` | ✅ | ✅ | ✅ | Shared 100k-row `TableState` model; TUI and iced build and render the same visible range; headless filter/navigation tests pass. |
+| `apps/terminal` | ✅ | — | ✅ | `rio-vt` PTY and grid with an iced cell renderer; local `echo` and window resize smoke checks pass. |
 | `apps/editor` | ✅ | ✅ | ✅ | TUI draws a `TestBackend` snapshot, opens a file, inserts text, saves, and quits; iced launches with a live snapshot and close-request interception. |
 | `apps/yazi-desktop` | ✅ | ✅ | ✅ | TUI draws the shared `ViewModel`, navigates, filters, and previews; iced file-manager path builds and opens the layered config. |
 | `boxpigma` (same-author downstream fork) | ✅ | ✅ | ✅ | Pins Ferriso `55d1745` (0.3.1); workspace tests pass, TUI starts/renders/quits, and iced opens/closes a live window. See [`versioning.md`](versioning.md). |
@@ -36,7 +37,7 @@ window-manager close chord (`Alt+F4`); both applications exited cleanly.
 | Editor iced | `ferriso-editor README.md` | Window opened; close request exited 0. |
 
 The headless release check was `./scripts/compat-check.sh`; the current
-post-change suite is `cargo test --workspace` with 265 passing tests across 53
+post-change suite is `cargo test --workspace` with 269 passing tests across 56
 suites.
 
 ## What "pass" means
