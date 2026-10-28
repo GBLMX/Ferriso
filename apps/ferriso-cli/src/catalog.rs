@@ -155,6 +155,18 @@ pub(crate) const APPS: &[AppInfo] = &[
         role: "music-player practice app with one actor-owned view model",
     },
     AppInfo {
+        name: "data-workbench",
+        package: "ferriso-data-workbench",
+        frontends: "TUI + iced",
+        role: "100k-row Modrinth-like table model dogfood",
+    },
+    AppInfo {
+        name: "ferriso-cli",
+        package: "ferriso-cli",
+        frontends: "CLI",
+        role: "framework catalog and toolchain diagnostics",
+    },
+    AppInfo {
         name: "editor",
         package: "ferriso-editor-app",
         frontends: "TUI + iced",
@@ -194,6 +206,16 @@ mod tests {
         for app in APPS {
             assert!(!app.frontends.is_empty(), "{} has no frontend", app.name);
             assert!(!app.package.is_empty(), "{} has no package", app.name);
+        }
+    }
+
+    #[test]
+    fn catalog_includes_the_new_apps() {
+        for name in ["data-workbench", "ferriso-cli"] {
+            assert!(
+                APPS.iter().any(|app| app.name == name),
+                "missing app catalog entry: {name}"
+            );
         }
     }
 }

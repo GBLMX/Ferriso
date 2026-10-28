@@ -428,9 +428,10 @@ for comparison, not used here.
 
 This version deliberately stops at the **view data model**. Terminal, iced, GPUI,
 and Floem views are written separately, with native layout, because that is the
-honest cost of native UI. Once boxpigma and Modrinth (two real applications) both run on this
-contract, duplicated *semantic components* can be extracted with evidence. A
-shared layout engine before that would be speculative abstraction.
+honest cost of native UI. Once boxpigma (a same-author downstream fork) and
+Modrinth (a real application) both run on this contract, duplicated
+*semantic components* can be extracted with evidence. A shared layout engine
+before that would be speculative abstraction.
 
 ## Snapshot and event semantics
 
@@ -668,9 +669,9 @@ chrome, pane contents, table columns, and stable row ids.
 ## Versioning and downstreams
 
 The workspace shares one version. While the project is `0.x`, a minor bump may
-break the contract; patches do not. The current line is `0.3.x`. Boxpigma is an
-external consumer pinned to `55d1745` (0.3.1), so it exercises the current
-contract alongside the workspace apps. See
+break the contract; patches do not. The current line is `0.3.x`. Boxpigma is a
+same-author downstream fork of pigma, pinned to `55d1745` (0.3.1), so it acts
+as a controlled compatibility probe rather than independent adoption. See
 [`docs/versioning.md`](docs/versioning.md) for the release and downstream
 matrix.
 
@@ -690,6 +691,9 @@ cargo run -p ferriso-cli -- --json apps
 Clawless owns argument parsing, async command execution, and presentation. The
 catalog commands emit structured artifacts, so `--json` is a stable machine
 surface; `doctor` checks the local `rustc`/`cargo` against the workspace MSRV.
+
+The app catalog includes the CLI itself and `data-workbench`; the
+`catalog_includes_the_new_apps` test guards against new apps being omitted.
 
 ## Tests
 

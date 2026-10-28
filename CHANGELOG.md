@@ -9,6 +9,10 @@
   structured artifacts, so the global `--json` flag produces machine-readable
   output instead of formatted text.
 
+- `apps/data-workbench`: a 100k-row Modrinth-like TUI/iced table dogfood app
+  built on `ferriso-workspace::TableState`, with responsive viewports and
+  shared filtering/selection across both frontends.
+
 - `ferriso-platform`: `pick_file_async`, `pick_folder_async`, and
   `save_file_async` run any `Arc<dyn FileDialog>` on Tokio's blocking pool and
   return `DialogError` when the worker fails.
@@ -24,6 +28,8 @@
 - Documentation builds with warnings denied; the compatibility script and CI
   use `--locked` resolution and check rustdoc before tests.
 - CI now checks the declared Rust 1.88 MSRV with a locked workspace check.
+- Clarified that `boxpigma` is a same-author downstream fork of pigma and a
+  controlled compatibility probe, not independent adoption.
 
 ### Fixed
 
@@ -32,6 +38,8 @@
   file. Existing ordinary mode bits are preserved; new Unix files start as
   `0600`. `Document::open` is bounded at 64 MiB and `open_with_limit` exposes an
   explicit bound.
+- `ferriso-cli`: the `apps` catalog now includes `data-workbench` and the CLI
+  itself; a catalog test guards against future workspace apps being omitted.
 - `apps/editor`: Open, Save, Save As, Save All, and close-save dialogs run as
   actor commands instead of blocking `update`; dialog results are applied once,
   duplicate dialogs are suppressed, and Save All resumes one tab at a time.

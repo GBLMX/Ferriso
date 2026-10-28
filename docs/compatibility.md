@@ -11,7 +11,7 @@ Compilation plus the core interaction path is the bar; feature parity is not.
 | `apps/data-workbench` | ✅ | ✅ | ✅ | Shared 100k-row `TableState` model; TUI and iced build and render the same visible range; headless filter/navigation tests pass. |
 | `apps/editor` | ✅ | ✅ | ✅ | TUI draws a `TestBackend` snapshot, opens a file, inserts text, saves, and quits; iced launches with a live snapshot and close-request interception. |
 | `apps/yazi-desktop` | ✅ | ✅ | ✅ | TUI draws the shared `ViewModel`, navigates, filters, and previews; iced file-manager path builds and opens the layered config. |
-| `boxpigma` (external `boxpigma` repo) | ✅ | ✅ | ✅ | Pins Ferriso `55d1745` (0.3.1); workspace tests pass, TUI starts/renders/quits, and iced opens/closes a live window. See [`versioning.md`](versioning.md). |
+| `boxpigma` (same-author downstream fork) | ✅ | ✅ | ✅ | Pins Ferriso `55d1745` (0.3.1); workspace tests pass, TUI starts/renders/quits, and iced opens/closes a live window. See [`versioning.md`](versioning.md). |
 
 `—` means the frontend has not been attached. It is not a claim that the
 application cannot be attached.
@@ -36,7 +36,7 @@ window-manager close chord (`Alt+F4`); both applications exited cleanly.
 | Editor iced | `ferriso-editor README.md` | Window opened; close request exited 0. |
 
 The headless release check was `./scripts/compat-check.sh`; the current
-post-change suite is `cargo test --workspace` with 264 passing tests across 53
+post-change suite is `cargo test --workspace` with 265 passing tests across 53
 suites.
 
 ## What "pass" means
@@ -100,8 +100,9 @@ the pending-dialog mutation guard, cursor, and welcome-overlay regressions.
 The feature-free platform binary passed
 its single test. Live window checks remain desktop-only.
 
-`boxpigma` is not a workspace member because it is a downstream consumer. It
-pins Ferriso `55d1745` (0.3.1). To check it against its pinned revision:
+`boxpigma` is not a workspace member because it is a same-author downstream
+fork of pigma. It pins Ferriso `55d1745` (0.3.1). To check it against its pinned
+revision:
 
 ```bash
 cd ../boxpigma

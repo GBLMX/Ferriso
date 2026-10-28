@@ -27,8 +27,9 @@ revision are consuming a snapshot of the contract, not a released version.
 | workspace apps | HEAD | 0.3.x | core/adapters tests; player, editor, yazi-desktop TUI and iced builds |
 | `boxpigma` | `55d1745` | 0.3.1 | workspace tests, TUI launch/render/quit, iced window open/close |
 
-`boxpigma` now consumes the 0.3.1 contract and has migrated its actor timer to
-`Subscription::interval`; it no longer uses the deprecated tick hooks. The hooks
+`boxpigma` is a same-author downstream fork of pigma. It now consumes the 0.3.1
+contract and has migrated its actor timer to `Subscription::interval`; it no
+longer uses the deprecated tick hooks. The hooks
 remain available for older 0.1/0.2 consumers that have not migrated yet.
 
 ## Release checklist
