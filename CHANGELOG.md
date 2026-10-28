@@ -19,6 +19,11 @@
 - `ferriso-platform`: `pick_file_async`, `pick_folder_async`, and
   `save_file_async` run any `Arc<dyn FileDialog>` on Tokio's blocking pool and
   return `DialogError` when the worker fails.
+- `ferriso-core` and adapters: `CoreContext`, `Sidecar`/`Sidecars`, and
+  `run_with_app_context`/`run_with_app_services` expose the actor endpoints
+  during startup and stop IPC, MPRIS, or other services before actor shutdown.
+  `CoreHandle::request_exit`/`CoreContext::request_exit` name the sidecar-facing
+  clean exit; `shutdown` remains an alias. See `docs/sidecar.md`.
 - `ferriso-gui::motion`: renderer-local easing curves and a clamped
   `Animation` timeline for short transitions.
 - `ferriso-gui::art::Pulse`: animated concentric pulse rings for focus,
