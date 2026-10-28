@@ -682,8 +682,8 @@ fn draw(frame: &mut Frame, time: f32) {
 }
 ```
 
-The palette and primitives are `no_std`-style data + pure functions; terminal
-color downgrading remains the frontend's responsibility.
+The palette and primitives are plain data + pure functions; terminal color
+downgrading remains the frontend's responsibility.
 
 ### Workspace gallery
 
