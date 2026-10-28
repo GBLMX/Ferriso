@@ -4,7 +4,7 @@
 //! ```text
 //! frontend ──CoreEvent::Message──▶ actor ──Arc<View> snapshot──▶ frontend
 //!                                 │
-//!                                 └── commands / subscriptions / deprecated timer
+//!                                 └── commands / subscriptions
 //! ```
 //!
 //! The event type is generic over the application message; no ratatui,
@@ -12,12 +12,12 @@
 //!
 //! ## Boundaries
 //!
-//! Everything the framework calls is user code: `init`, `update`, the
-//! deprecated `tick`, `view`, `subscriptions`, `should_quit`, `shutdown`,
-//! `debug`, command futures, and subscription streams. The actor wraps those
-//! calls; a panic is converted into a [`FrameworkError`] with the phase and task
-//! id, recorded in [`Diagnostics`], and stops the actor instead of continuing
-//! on inconsistent state. Startup panics are logged and re-raised; a
+//! Everything the framework calls is user code: `init`, `update`, `view`,
+//! `subscriptions`, `should_quit`, `shutdown`, `debug`, command futures, and
+//! subscription streams. The actor wraps those calls; a panic is converted
+//! into a [`FrameworkError`] with the phase and task id, recorded in
+//! [`Diagnostics`], and stops the actor instead of continuing on inconsistent state.
+//! Startup panics are logged and re-raised; a
 //! [`App::debug`] panic is diagnostic-only, and shutdown panics are recorded
 //! after the actor has already stopped. Shutdown awaits [`App::shutdown_async`]
 //! before calling [`App::shutdown`].
@@ -32,7 +32,6 @@ use std::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
-    time::Duration,
 };
 
 use ferriso_diagnostics::{Diagnostics, EventKind, FrameworkError, Level, TaskId};
@@ -40,7 +39,6 @@ use futures::{FutureExt, StreamExt};
 use tokio::{
     sync::{mpsc, watch},
     task::{AbortHandle, JoinError, JoinHandle, JoinSet},
-    time::{Instant, Interval, MissedTickBehavior, interval_at},
 };
 
 use crate::{App, Command};
@@ -330,10 +328,6 @@ fn spawn_inner<A: App>(
     let handle = CoreHandle { tx: control_tx };
 
     let task = tokio::spawn(async move {
-        let mut interval_duration = startup(&diagnostics, task_id, "tick_interval", || {
-            app_tick_interval(&app)
-        });
-        let mut ticker = interval_duration.map(make_ticker);
         let mut snapshot_sequence = 1_u64;
         let mut active_subscriptions: HashMap<u64, SubscriptionTask> = HashMap::new();
         let mut commands = JoinSet::new();
@@ -407,8 +401,6 @@ fn spawn_inner<A: App>(
                             &app,
                             &diagnostics,
                             task_id,
-                            &mut interval_duration,
-                            &mut ticker,
                             &views_tx,
                             &mut snapshot_sequence,
                             &mut active_subscriptions,
@@ -464,44 +456,11 @@ fn spawn_inner<A: App>(
                             &app,
                             &diagnostics,
                             task_id,
-                            &mut interval_duration,
-                            &mut ticker,
                             &views_tx,
                             &mut snapshot_sequence,
                             &mut active_subscriptions,
                             &command_tx,
                             phase,
-                        ) {
-                            break 'actor;
-                        }
-                    }
-                    _ = next_tick(&mut ticker) => {
-                        diagnostics.event(EventKind::Tick, TARGET, "tick", task_id, "timer");
-
-                        let Some(command) = guard(&diagnostics, task_id, "tick", || {
-                            app_tick(&mut app)
-                        }) else {
-                            break 'actor;
-                        };
-                        dispatch(
-                            command,
-                            &mut commands,
-                            &mut keyed_commands,
-                            &command_tx,
-                            &diagnostics,
-                        );
-
-                        if !publish(
-                            &app,
-                            &diagnostics,
-                            task_id,
-                            &mut interval_duration,
-                            &mut ticker,
-                            &views_tx,
-                            &mut snapshot_sequence,
-                            &mut active_subscriptions,
-                            &command_tx,
-                            "tick",
                         ) {
                             break 'actor;
                         }
@@ -555,16 +514,6 @@ fn spawn_inner<A: App>(
     (handle, snapshots, CoreTask { handle: task })
 }
 
-#[allow(deprecated)]
-fn app_tick_interval<A: App>(app: &A) -> Option<Duration> {
-    app.tick_interval()
-}
-
-#[allow(deprecated)]
-fn app_tick<A: App>(app: &mut A) -> Command<A::Message> {
-    app.tick()
-}
-
 /// Guard one user-code call. On panic, record a phase-tagged framework error
 /// and return `None`; callers decide whether to stop the actor.
 fn guard<T>(
@@ -615,33 +564,20 @@ fn startup<T>(
     }
 }
 
-/// Refresh the timer, publish a snapshot, and report whether the actor should
-/// continue. A panic in any hook stops the actor instead of publishing
-/// possibly inconsistent state.
+/// Publish a snapshot and report whether the actor should continue. A panic
+/// in any hook stops the actor instead of publishing possibly inconsistent
+/// state.
 #[allow(clippy::too_many_arguments)]
 fn publish<A: App>(
     app: &A,
     diagnostics: &Diagnostics,
     task: TaskId,
-    interval_duration: &mut Option<Duration>,
-    ticker: &mut Option<Interval>,
     views_tx: &watch::Sender<(Arc<A::View>, u64)>,
     snapshot_sequence: &mut u64,
     active_subscriptions: &mut HashMap<u64, SubscriptionTask>,
     command_tx: &mpsc::Sender<InboxMessage<A::Message>>,
     phase: &'static str,
 ) -> bool {
-    let Some(wanted) = guard(diagnostics, task, "tick_interval", || {
-        app_tick_interval(app)
-    }) else {
-        return false;
-    };
-
-    if wanted != *interval_duration {
-        *interval_duration = wanted;
-        *ticker = wanted.map(make_ticker);
-    }
-
     let Some(view) = guard(diagnostics, task, "view", || app.view()) else {
         return false;
     };
@@ -895,22 +831,6 @@ fn panic_message(payload: &(dyn Any + Send)) -> String {
         message.clone()
     } else {
         "non-string panic payload".into()
-    }
-}
-
-fn make_ticker(duration: Duration) -> Interval {
-    let period = duration.max(Duration::from_millis(1));
-    let mut ticker = interval_at(Instant::now() + period, period);
-    ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    ticker
-}
-
-async fn next_tick(ticker: &mut Option<Interval>) {
-    match ticker {
-        Some(ticker) => {
-            ticker.tick().await;
-        }
-        None => std::future::pending::<()>().await,
     }
 }
 
@@ -1545,91 +1465,6 @@ mod tests {
             0,
             "dropping the actor must abort joined commands"
         );
-    }
-
-    #[tokio::test]
-    async fn zero_tick_interval_is_clamped_instead_of_panicking() {
-        struct ZeroTicker {
-            ticks: u32,
-        }
-
-        impl App for ZeroTicker {
-            type Message = ();
-            type View = u32;
-
-            fn update(&mut self, (): ()) -> Command<()> {
-                Command::none()
-            }
-
-            fn view(&self) -> u32 {
-                self.ticks
-            }
-
-            fn tick_interval(&self) -> Option<Duration> {
-                Some(Duration::ZERO)
-            }
-
-            fn tick(&mut self) -> Command<()> {
-                self.ticks += 1;
-                Command::none()
-            }
-        }
-
-        let (handle, mut snapshots, task) = spawn(ZeroTicker { ticks: 0 });
-        timeout(Duration::from_secs(1), async {
-            loop {
-                if *snapshots.changed().await.expect("actor alive") >= 3 {
-                    break;
-                }
-            }
-        })
-        .await
-        .expect("zero interval ticks");
-        handle.shutdown();
-        timeout(Duration::from_secs(1), task.join())
-            .await
-            .expect("actor exits");
-    }
-
-    #[tokio::test]
-    async fn tick_runs_on_the_actor_timer() {
-        struct Ticker {
-            ticks: u32,
-        }
-
-        impl App for Ticker {
-            type Message = ();
-            type View = u32;
-
-            fn update(&mut self, (): ()) -> Command<()> {
-                Command::none()
-            }
-
-            fn view(&self) -> u32 {
-                self.ticks
-            }
-
-            fn tick_interval(&self) -> Option<Duration> {
-                Some(Duration::from_millis(10))
-            }
-
-            fn tick(&mut self) -> Command<()> {
-                self.ticks += 1;
-                Command::none()
-            }
-        }
-
-        let (_handle, mut snapshots, task) = spawn(Ticker { ticks: 0 });
-        timeout(Duration::from_secs(1), async {
-            loop {
-                if *snapshots.changed().await.expect("actor alive") >= 3 {
-                    break;
-                }
-            }
-        })
-        .await
-        .expect("ticks arrive");
-        task.abort();
     }
 
     #[tokio::test]

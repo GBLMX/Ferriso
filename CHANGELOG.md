@@ -34,6 +34,12 @@
 - Clarified that `boxpigma` is a same-author downstream fork of pigma and a
   controlled compatibility probe, not independent adoption.
 
+### Removed
+
+- `ferriso-core`: removed the deprecated `App::tick_interval` and `App::tick`
+  hooks and the actor-owned compatibility timer. Timed work now uses
+  `Subscription::interval` and an application-defined tick message.
+
 ### Fixed
 
 - `ferriso-editor`: `Document::save_as` now writes a same-directory temporary

@@ -2,7 +2,7 @@
 //!
 //! A [`Subscription`] is declarative: the application returns the streams that
 //! should be active for its current state. The actor reconciles them after
-//! `init` and every update (and after a deprecated compatibility tick):
+//! `init` and every update:
 //!
 //! - new keys are spawned as background tasks;
 //! - keys that are no longer returned are aborted;
@@ -78,8 +78,8 @@ impl<M> Subscription<M> {
 
     /// Add a periodic timer stream under `key`.
     ///
-    /// The first tick arrives after `period`, matching the deprecated actor
-    /// timer. Change the key when the period changes. Periods are clamped to
+    /// The first tick arrives after `period`. Change the key when the period
+    /// changes. Periods are clamped to
     /// one millisecond and missed ticks are skipped rather than burst.
     pub fn interval(key: u64, period: Duration, message: M) -> Self
     where

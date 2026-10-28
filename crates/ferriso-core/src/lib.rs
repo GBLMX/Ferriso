@@ -1,10 +1,9 @@
 //! The headless half of Ferriso.
 //!
 //! `ferriso-core` owns the application state in a Tokio actor, schedules async
-//! commands, reconciles keyed subscription streams, exposes an optional
-//! deprecated tick timer,
-//! cooperative cancellation, accepts frontend-neutral messages, and publishes
-//! immutable view snapshots. Its dependencies are Tokio, futures, and
+//! commands, reconciles keyed subscription streams, provides cooperative
+//! cancellation, accepts frontend-neutral messages, and publishes immutable
+//! view snapshots. Its dependencies are Tokio, futures, and
 //! `ferriso-diagnostics`.
 //!
 //! Adapters (`ferriso-tui`, `ferriso-gui`) never call [`App::update`]; they send

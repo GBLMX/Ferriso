@@ -4,7 +4,7 @@
 //! widgets, or layout. Frontends translate raw input into semantic messages and
 //! render the [`App::View`] snapshot with their own native layout.
 
-use std::{future::Future, pin::Pin, time::Duration};
+use std::{future::Future, pin::Pin};
 
 use crate::{Command, Subscription};
 
@@ -40,26 +40,9 @@ pub trait App: Send + 'static {
     /// Build the current view data. Called only on the actor task.
     fn view(&self) -> Self::View;
 
-    /// How often [`App::tick`] should run, if at all.
-    #[deprecated(
-        note = "use `Subscription::interval` with an app-defined Tick message; actor-owned timers are a compatibility shim"
-    )]
-    fn tick_interval(&self) -> Option<Duration> {
-        None
-    }
-
-    /// Deprecated: handle one actor-owned timer tick. New applications use
-    /// [`crate::Subscription::interval`] and their own `Tick` message.
-    #[deprecated(
-        note = "use `Subscription::interval` with an app-defined Tick message; actor-owned timers are a compatibility shim"
-    )]
-    fn tick(&mut self) -> Command<Self::Message> {
-        Command::none()
-    }
-
     /// Declare the long-lived streams that should be active for this state.
     ///
-    /// Called after `init` and every update (and compatibility tick). Streams are keyed;
+    /// Called after `init` and every update. Streams are keyed;
     /// keys that disappear are aborted, while existing keys keep running.
     /// Return a stable key per logical source and change it when the stream's
     /// parameters change.
@@ -67,7 +50,7 @@ pub trait App: Send + 'static {
         Subscription::none()
     }
 
-    /// Whether the actor should stop after the current message (or compatibility tick).
+    /// Whether the actor should stop after the current message.
     fn should_quit(&self) -> bool {
         false
     }

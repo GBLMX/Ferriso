@@ -11,7 +11,6 @@ flowchart LR
         Actor["actor task\nApp state + update"]
         Commands["Command futures"]
         Subscriptions["keyed subscription streams"]
-        Timer["deprecated tick\n(compatibility)"]
         Snapshot[("watch\nArc<View>")]
     end
 
@@ -21,7 +20,6 @@ flowchart LR
     FLOEM["ferriso-floem\nFloem"] -- "CoreEvent::Message" --> Actor
     Actor --> Commands
     Actor --> Subscriptions
-    Actor --> Timer
     Actor --> Snapshot
     Snapshot -- "latest-only" --> TUI
     Snapshot -- "latest-only" --> GUI
@@ -86,7 +84,7 @@ does not expose backend errors.
 ## Core contract
 
 ```rust
-use std::{future::Future, pin::Pin, time::Duration};
+use std::{future::Future, pin::Pin};
 
 pub trait App: Send + 'static {
     type Message: Send + 'static;
@@ -96,9 +94,6 @@ pub trait App: Send + 'static {
     fn update(&mut self, message: Self::Message) -> Command<Self::Message>;
     fn view(&self) -> Self::View;
 
-    // Deprecated compatibility shim; new apps use Subscription::interval.
-    fn tick_interval(&self) -> Option<Duration> { None }
-    fn tick(&mut self) -> Command<Self::Message> { Command::none() }
     fn subscriptions(&self) -> Subscription<Self::Message> { Subscription::none() }
     fn should_quit(&self) -> bool { false }
     fn shutdown_async(&mut self) -> Option<Pin<Box<dyn Future<Output = ()> + Send + '_>>> { None }
@@ -131,15 +126,12 @@ Rules that keep the boundary real:
   must finish after the UI moves on.
 - Subscriptions are long-lived streams declared by `App::subscriptions` and
   keyed by a stable `u64`. The actor reconciles them after `init` and every
-  update (and after a compatibility tick, when one is configured): new keys are
-  spawned, missing keys are aborted, and existing keys keep running. Change the
-  key when stream parameters change. A stream that ends stays registered under
-  its key until the application stops returning it; use `Subscription::interval`
-  for clocks, `Subscription::stream_with_end` when completion must be observed,
-  and commands for one-shot work.
-- `App::tick_interval` and `App::tick` are deprecated compatibility hooks. New
-  applications declare a `Tick` message and return `Subscription::interval(...)`;
-  frontends still never tick the application.
+  update: new keys are spawned, missing keys are aborted, and existing keys
+  keep running. Change the key when stream parameters change. A stream that
+  ends stays registered under its key until the application stops returning
+  it; use `Subscription::interval` for clocks,
+  `Subscription::stream_with_end` when completion must be observed, and
+  commands for one-shot work.
 - Snapshots are delivered over a `tokio::sync::watch` channel. A slow frontend
   gets the newest state instead of a backlog.
 
@@ -253,7 +245,7 @@ Diagnostics are a framework facility, not `println!` calls in application code.
 
 Runtime boundary capture:
 
-- `init`, `update`, `tick`, `view`, `subscriptions`, `should_quit`, and
+- `init`, `update`, `view`, `subscriptions`, `should_quit`, and
   `shutdown` are wrapped with `catch_unwind` and phase/task context. A panic
   stops the actor instead of continuing on inconsistent state; startup panics
   are logged and re-raised, and a `shutdown` panic is recorded after the actor
@@ -719,8 +711,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 - `ferriso-diagnostics`: error code/help/cause rendering, quiet-by-default
   behavior, bounded rings, logger filtering, report contents, and export.
 - `ferriso-core`: command round trips, bounded-inbox bursts, command abort on
-  shutdown, cooperative cancellation tokens, compatibility actor ticks,
-  subscription delivery/cancellation/end reporting, snapshot revisions,
+  shutdown, cooperative cancellation tokens, subscription
+  delivery/cancellation/end reporting, snapshot revisions,
   async-shutdown ordering and panic containment, per-command task ids, shutdown
   when handles drop, debug event capture, and fatal user-task panic handling for
   updates, commands, and streams.
