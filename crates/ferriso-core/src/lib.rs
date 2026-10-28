@@ -20,8 +20,8 @@ pub use cancellation::CancellationToken;
 pub use command::Command;
 pub use ferriso_diagnostics::{Diagnostics, EventKind, FrameworkError, TaskId};
 pub use runtime::{
-    CoreContext, CoreEvent, CoreHandle, CoreTask, RuntimeOptions, Snapshots, spawn,
-    spawn_with_debug, spawn_with_diagnostics, spawn_with_diagnostics_and_options,
+    CoreContext, CoreEvent, CoreHandle, CoreTask, RuntimeOptions, Sidecar, Sidecars, Snapshots,
+    spawn, spawn_with_debug, spawn_with_diagnostics, spawn_with_diagnostics_and_options,
     spawn_with_options,
 };
 pub use subscription::Subscription;
@@ -30,6 +30,7 @@ pub use subscription::Subscription;
 pub mod prelude {
     pub use crate::{
         App, CancellationToken, Command, CoreContext, CoreHandle, Diagnostics, RuntimeOptions,
-        Snapshots, Subscription, spawn, spawn_with_diagnostics, spawn_with_options,
+        Sidecar, Sidecars, Snapshots, Subscription, spawn, spawn_with_diagnostics,
+        spawn_with_options,
     };
 }

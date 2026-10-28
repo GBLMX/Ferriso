@@ -16,7 +16,7 @@ use std::{
 };
 
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream};
-use ferriso_core::{App, CoreContext, Diagnostics, Snapshots};
+use ferriso_core::{App, CoreContext, Diagnostics, Sidecars, Snapshots};
 use futures::{StreamExt, stream};
 use ratatui::Frame;
 
@@ -167,6 +167,44 @@ where
 
     let result = run_with::<A, R>(handle.clone(), snapshots, renderer, options);
 
+    handle.shutdown();
+    let _ =
+        runtime.block_on(async { tokio::time::timeout(Duration::from_secs(1), task.join()).await });
+    result
+}
+
+/// Like [`run_with_app_context`], but owns the sidecars for the session.
+///
+/// The hook returns the services to stop when the terminal loop exits. Sidecars
+/// are shut down before the actor, keeping IPC and MPRIS from outliving their
+/// snapshot source.
+pub fn run_with_app_services<A, R, F, S>(
+    build: F,
+    start: S,
+    renderer: R,
+    options: Options,
+) -> io::Result<()>
+where
+    A: App,
+    R: Renderer<A::View, A::Message>,
+    F: FnOnce() -> A,
+    S: FnOnce(CoreContext<A::Message, A::View>) -> Sidecars,
+{
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    let (handle, snapshots, task) = {
+        let _enter = runtime.enter();
+        ferriso_core::spawn(build())
+    };
+    let sidecars = {
+        let _enter = runtime.enter();
+        start(CoreContext::new(handle.clone(), snapshots.clone()))
+    };
+
+    let result = run_with::<A, R>(handle.clone(), snapshots, renderer, options);
+
+    runtime.block_on(sidecars.shutdown());
     handle.shutdown();
     let _ =
         runtime.block_on(async { tokio::time::timeout(Duration::from_secs(1), task.join()).await });

@@ -25,9 +25,11 @@
 use std::{
     any::Any,
     collections::{HashMap, HashSet},
+    future::Future,
     hash::{Hash, Hasher},
     num::NonZeroUsize,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -251,6 +253,77 @@ impl<M, V> CoreContext<M, V> {
     /// Ask the actor to stop cleanly.
     pub fn shutdown(&self) {
         self.handle.shutdown();
+    }
+}
+
+/// A background service owned alongside an actor.
+///
+/// The adapter calls [`Sidecar::shutdown`] after the frontend leaves and before
+/// it asks the actor to stop, so sockets, D-Bus objects, and watcher tasks do
+/// not outlive the session.
+pub trait Sidecar: Send + 'static {
+    /// Stop the service and release its resources.
+    fn shutdown(self: Box<Self>) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+}
+
+impl<T: Send + 'static> Sidecar for JoinHandle<T> {
+    fn shutdown(self: Box<Self>) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+        Box::pin(async move {
+            let handle = *self;
+            handle.abort();
+            let _ = handle.await;
+        })
+    }
+}
+
+/// A set of sidecars with one deterministic shutdown order.
+#[derive(Default)]
+pub struct Sidecars {
+    items: Vec<Box<dyn Sidecar>>,
+}
+
+impl Sidecars {
+    /// No sidecars.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add one sidecar.
+    pub fn push<S: Sidecar>(&mut self, sidecar: S) {
+        self.items.push(Box::new(sidecar));
+    }
+
+    /// Add a Tokio task as a sidecar.
+    pub fn spawn<F>(&mut self, future: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.push(tokio::spawn(future));
+    }
+
+    /// Number of services in the set.
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    /// Whether the set is empty.
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    /// Stop every sidecar in insertion order.
+    pub async fn shutdown(self) {
+        for sidecar in self.items {
+            sidecar.shutdown().await;
+        }
+    }
+}
+
+impl<T: Send + 'static> From<JoinHandle<T>> for Sidecars {
+    fn from(handle: JoinHandle<T>) -> Self {
+        let mut sidecars = Self::new();
+        sidecars.push(handle);
+        sidecars
     }
 }
 
@@ -960,6 +1033,16 @@ mod tests {
         context.shutdown();
         task.join().await;
         assert!(handle.is_closed());
+    }
+
+    #[tokio::test]
+    async fn sidecars_stop_their_tasks() {
+        let task = tokio::spawn(std::future::pending::<()>());
+        let sidecars = Sidecars::from(task);
+        assert_eq!(sidecars.len(), 1);
+        timeout(Duration::from_secs(1), sidecars.shutdown())
+            .await
+            .expect("sidecar shutdown completes");
     }
 
     #[tokio::test]
