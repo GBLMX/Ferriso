@@ -28,6 +28,9 @@
   `Animation` timeline for short transitions.
 - `ferriso-gui::art::Pulse`: animated concentric pulse rings for focus,
   activity, and live beacons, demonstrated in the design gallery.
+- `ferriso-tui::art`: terminal-native gradients, animated aurora background,
+  bounded pulse envelope, and moving text shimmer, all driven by caller-supplied
+  time.
 - `ferriso-editor`: re-export `DEFAULT_OPEN_LIMIT` so the public `Document::open`
   bound is linkable and discoverable.
 

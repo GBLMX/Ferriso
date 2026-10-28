@@ -660,6 +660,31 @@ renderer-local clock and never wake the core actor. The art and interaction
 rationale is in
 [`docs/art-interaction-study.md`](docs/art-interaction-study.md).
 
+### Terminal art
+
+`ferriso-tui::art` is the terminal counterpart to the GUI artwork module:
+predictable RGB gradients, an animated aurora backdrop, a bounded pulse
+envelope for focus/activity, and a moving text shimmer. They write into the
+current ratatui `Buffer`; time is supplied by the application, so effects stay
+deterministic and never wake the core actor.
+
+```rust
+use ferriso_tui::art;
+use ratatui::Frame;
+
+fn draw(frame: &mut Frame, time: f32) {
+    art::Aurora::new(time, art::Palette::FERRISO)
+        .intensity(0.8)
+        .render(frame.area(), frame.buffer_mut());
+
+    let _focus = art::Pulse::default().at(time);
+    let _label = art::Shimmer::default();
+}
+```
+
+The palette and primitives are `no_std`-style data + pure functions; terminal
+color downgrading remains the frontend's responsibility.
+
 ### Workspace gallery
 
 The workspace models cover the lifecycle that otherwise gets copied into every

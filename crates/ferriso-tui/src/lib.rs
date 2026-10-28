@@ -20,6 +20,7 @@ use ferriso_core::{App, CoreContext, Diagnostics, Sidecars, Snapshots};
 use futures::{StreamExt, stream};
 use ratatui::Frame;
 
+pub mod art;
 pub mod keymap;
 
 pub use crossterm;
