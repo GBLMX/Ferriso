@@ -142,6 +142,14 @@ impl<M> CoreHandle<M> {
     /// The actor aborts in-flight work, then awaits [`App::shutdown_async`],
     /// then calls [`App::shutdown`].
     pub fn shutdown(&self) {
+        self.request_exit();
+    }
+
+    /// Request the same clean stop as [`CoreHandle::shutdown`].
+    ///
+    /// This is the name sidecars should use: IPC, MPRIS, and signal handlers
+    /// are asking the application to exit, not managing a runtime.
+    pub fn request_exit(&self) {
         let _ = self.tx.send(CoreEvent::Shutdown);
     }
 
@@ -250,9 +258,14 @@ impl<M, V> CoreContext<M, V> {
         self.handle.send(message)
     }
 
-    /// Ask the actor to stop cleanly.
+    /// Request a clean actor stop.
+    pub fn request_exit(&self) {
+        self.handle.request_exit();
+    }
+
+    /// Alias for [`CoreContext::request_exit`].
     pub fn shutdown(&self) {
-        self.handle.shutdown();
+        self.request_exit();
     }
 }
 
@@ -1030,7 +1043,7 @@ mod tests {
 
         assert!(context.send(Message::Increment));
         assert!(!context.handle().is_closed());
-        context.shutdown();
+        context.request_exit();
         task.join().await;
         assert!(handle.is_closed());
     }
