@@ -26,26 +26,29 @@ messages; the lifecycle is the part Ferriso owns.
 
 ```rust,ignore
 use ferriso_core::{CoreContext, Sidecar, Sidecars};
-use std::future::Future;
-use std::pin::Pin;
+use std::{future::Future, pin::Pin};
+use tokio::{sync::oneshot, task::JoinHandle};
 
 struct MprisTask {
-    connection: zbus::Connection,
+    task: JoinHandle<()>,
+    stop: oneshot::Sender<()>,
 }
 
 impl Sidecar for MprisTask {
     fn shutdown(self: Box<Self>) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
         Box::pin(async move {
-            // Dropping the connection removes the well-known name and objects.
-            drop(self.connection);
+            // The task owns the connection and drops it after receiving this.
+            let _ = self.stop.send(());
+            let _ = self.task.await;
         })
     }
 }
 
 fn start_mpris(context: CoreContext<Message, View>) -> Sidecars {
     let handle = context.handle().clone();
+    let (stop, stop_rx) = oneshot::channel();
     let task = tokio::spawn(async move {
-        let connection = zbus::connection::Builder::session()
+        let connection = match zbus::connection::Builder::session()
             .expect("session bus")
             .name("org.mpris.MediaPlayer2.example")
             .expect("request MPRIS name")
@@ -53,19 +56,33 @@ fn start_mpris(context: CoreContext<Message, View>) -> Sidecars {
             .expect("serve MPRIS object")
             .build()
             .await
-            .expect("start MPRIS service");
-        // Keep the service task alive for the actor's lifetime.
-        let _ = connection;
+        {
+            Ok(connection) => connection,
+            Err(error) => {
+                eprintln!("MPRIS unavailable: {error}");
+                return;
+            }
+        };
+        // Keep the connection alive until the sidecar asks the task to stop.
+        let _keep_alive = connection;
+        let _ = stop_rx.await;
     });
 
     let mut sidecars = Sidecars::new();
-    sidecars.push(task);
+    sidecars.push(MprisTask { task, stop });
     sidecars
 }
+```
 
-let mut sidecars = start_mpris(context);
-// A D-Bus `Quit` method can request the same clean stop the CLI uses:
-// handle.request_exit();
+Wire it through the adapter hook:
+
+```rust,ignore
+ferriso_tui::run_with_app_services(
+    || App::new(),
+    start_mpris,
+    AppTui::new(),
+    ferriso_tui::Options::default(),
+)?;
 ```
 
 `Player` above is the application's `#[zbus::interface]` type. Its methods
