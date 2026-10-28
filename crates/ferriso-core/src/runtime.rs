@@ -216,6 +216,44 @@ impl<V> Snapshots<V> {
     }
 }
 
+/// The actor endpoints handed to composition code after the actor starts.
+///
+/// The convenience adapters normally hide [`CoreHandle`] and [`Snapshots`].
+/// A context exposes the same pair for sidecars, tests, and multi-frontend
+/// composition without making the caller rebuild the runtime.
+#[derive(Clone)]
+pub struct CoreContext<M, V> {
+    handle: CoreHandle<M>,
+    snapshots: Snapshots<V>,
+}
+
+impl<M, V> CoreContext<M, V> {
+    /// Pair the two actor endpoints.
+    pub fn new(handle: CoreHandle<M>, snapshots: Snapshots<V>) -> Self {
+        Self { handle, snapshots }
+    }
+
+    /// Sender into the actor.
+    pub fn handle(&self) -> &CoreHandle<M> {
+        &self.handle
+    }
+
+    /// Read side of the snapshot channel.
+    pub fn snapshots(&self) -> &Snapshots<V> {
+        &self.snapshots
+    }
+
+    /// Send one semantic message.
+    pub fn send(&self, message: M) -> bool {
+        self.handle.send(message)
+    }
+
+    /// Ask the actor to stop cleanly.
+    pub fn shutdown(&self) {
+        self.handle.shutdown();
+    }
+}
+
 /// Handle to the actor task.
 pub struct CoreTask {
     handle: JoinHandle<()>,
@@ -901,6 +939,27 @@ mod tests {
                 Message::Quit => "quit".into(),
             })
         }
+    }
+
+    #[tokio::test]
+    async fn core_context_exposes_both_actor_endpoints() {
+        let (handle, snapshots, task) = spawn(Counter::default());
+        let context = CoreContext::new(handle.clone(), snapshots.clone());
+
+        let mut updates = snapshots;
+        timeout(Duration::from_secs(1), async {
+            while updates.current().as_ref() != &2 {
+                updates.changed().await.expect("actor still running");
+            }
+        })
+        .await
+        .expect("init commands publish the second count");
+
+        assert!(context.send(Message::Increment));
+        assert!(!context.handle().is_closed());
+        context.shutdown();
+        task.join().await;
+        assert!(handle.is_closed());
     }
 
     #[tokio::test]

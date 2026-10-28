@@ -18,7 +18,7 @@ pub mod interaction;
 pub mod keymap;
 pub mod motion;
 
-use ferriso_core::{App, CoreHandle, Diagnostics, Snapshots};
+use ferriso_core::{App, CoreContext, CoreHandle, Diagnostics, Snapshots};
 use futures::{Stream, stream};
 use iced::{Element, Subscription, Task, Theme};
 
@@ -210,6 +210,44 @@ where
         let _enter = runtime.enter();
         ferriso_core::spawn(build())
     };
+
+    let result = run_with::<A, L, R>(handle.clone(), snapshots, renderer, settings);
+
+    handle.shutdown();
+    let _ =
+        runtime.block_on(async { tokio::time::timeout(Duration::from_secs(1), task.join()).await });
+    result
+}
+/// Like [`run_with_app`], but exposes the started actor to a composition hook.
+///
+/// The hook runs after the actor exists and before the window opens. Use it to
+/// start IPC, MPRIS, or other sidecars that need the real [`CoreContext`].
+pub fn run_with_app_context<A, L, R, F, S>(
+    build: F,
+    start: S,
+    renderer: R,
+    settings: Settings,
+) -> iced::Result
+where
+    A: App,
+    A::Message: Clone,
+    L: Send + 'static,
+    R: Renderer<A::View, A::Message, L> + Send + 'static,
+    F: FnOnce() -> A,
+    S: FnOnce(CoreContext<A::Message, A::View>),
+{
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("failed to start Tokio runtime for the core actor");
+    let (handle, snapshots, task) = {
+        let _enter = runtime.enter();
+        ferriso_core::spawn(build())
+    };
+    {
+        let _enter = runtime.enter();
+        start(CoreContext::new(handle.clone(), snapshots.clone()));
+    }
 
     let result = run_with::<A, L, R>(handle.clone(), snapshots, renderer, settings);
 

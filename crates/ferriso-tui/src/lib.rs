@@ -16,7 +16,7 @@ use std::{
 };
 
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream};
-use ferriso_core::{App, Diagnostics, Snapshots};
+use ferriso_core::{App, CoreContext, Diagnostics, Snapshots};
 use futures::{StreamExt, stream};
 use ratatui::Frame;
 
@@ -134,6 +134,43 @@ where
     F: FnOnce() -> A,
 {
     run_with_app_diagnostics(build, renderer, options, Diagnostics::new())
+}
+
+/// Like [`run_with_app`], but exposes the started actor to a composition hook.
+///
+/// The hook runs after the actor exists and before the terminal opens. Use it
+/// to start IPC, MPRIS, or other sidecars that need the real [`CoreContext`].
+/// The adapter still owns the runtime and shuts the actor down after the loop.
+pub fn run_with_app_context<A, R, F, S>(
+    build: F,
+    start: S,
+    renderer: R,
+    options: Options,
+) -> io::Result<()>
+where
+    A: App,
+    R: Renderer<A::View, A::Message>,
+    F: FnOnce() -> A,
+    S: FnOnce(CoreContext<A::Message, A::View>),
+{
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    let (handle, snapshots, task) = {
+        let _enter = runtime.enter();
+        ferriso_core::spawn(build())
+    };
+    {
+        let _enter = runtime.enter();
+        start(CoreContext::new(handle.clone(), snapshots.clone()));
+    }
+
+    let result = run_with::<A, R>(handle.clone(), snapshots, renderer, options);
+
+    handle.shutdown();
+    let _ =
+        runtime.block_on(async { tokio::time::timeout(Duration::from_secs(1), task.join()).await });
+    result
 }
 
 /// Like [`run_with_app`], but starts the actor with caller-owned diagnostics.
